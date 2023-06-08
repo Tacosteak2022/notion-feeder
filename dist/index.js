@@ -887,8 +887,8 @@ const remark_gfm_1 = __importDefault(__webpack_require__(43));
  * @param body any Markdown or GFM content
  */
 function markdownToBlocks(body, allowUnsupportedObjectType = false) {
-    const root = unified_1.default().use(remark_parse_1.default).use(remark_gfm_1.default).parse(body);
-    return internal_1.parseBlocks(root, allowUnsupportedObjectType);
+    const root = (0, unified_1.default)().use(remark_parse_1.default).use(remark_gfm_1.default).parse(body);
+    return (0, internal_1.parseBlocks)(root, allowUnsupportedObjectType);
 }
 exports.markdownToBlocks = markdownToBlocks;
 /**
@@ -898,8 +898,8 @@ exports.markdownToBlocks = markdownToBlocks;
  * @param text any inline Markdown or GFM content
  */
 function markdownToRichText(text) {
-    const root = unified_1.default().use(remark_parse_1.default).use(remark_gfm_1.default).parse(text);
-    return internal_1.parseRichText(root);
+    const root = (0, unified_1.default)().use(remark_parse_1.default).use(remark_gfm_1.default).parse(text);
+    return (0, internal_1.parseRichText)(root);
 }
 exports.markdownToRichText = markdownToRichText;
 //# sourceMappingURL=index.js.map
@@ -1310,11 +1310,16 @@ function parseBlocks(root, unsupported = false) {
 }
 exports.parseBlocks = parseBlocks;
 function parseRichText(root) {
-    if (root.children.length !== 1 || root.children[0].type !== 'paragraph') {
+    if (root.children[0].type !== 'paragraph') {
         throw new Error(`Unsupported markdown element: ${JSON.stringify(root)}`);
     }
-    const paragraph = root.children[0];
-    return paragraph.children.flatMap(child => parseInline(child));
+    const richTexts = [];
+    root.children.forEach(paragraph => {
+        if (paragraph.type === 'paragraph') {
+            paragraph.children.forEach(child => richTexts.push(...parseInline(child)));
+        }
+    });
+    return richTexts;
 }
 exports.parseRichText = parseRichText;
 //# sourceMappingURL=internal.js.map
@@ -48064,6 +48069,8 @@ var __webpack_exports__ = {};
 // EXTERNAL MODULE: ./node_modules/rss-parser/index.js
 var rss_parser = __webpack_require__(5003);
 var rss_parser_default = /*#__PURE__*/__webpack_require__.n(rss_parser);
+// EXTERNAL MODULE: ./node_modules/dotenv/lib/main.js
+var main = __webpack_require__(9738);
 ;// CONCATENATED MODULE: ./src/helpers.js
 function timeDifference(date1, date2) {
   const difference = Math.floor(date1) - Math.floor(date2);
@@ -48080,8 +48087,6 @@ function timeDifference(date1, date2) {
     diffInSeconds
   };
 }
-// EXTERNAL MODULE: ./node_modules/dotenv/lib/main.js
-var main = __webpack_require__(9738);
 // EXTERNAL MODULE: ./node_modules/@notionhq/client/build/src/index.js
 var src = __webpack_require__(9267);
 ;// CONCATENATED MODULE: ./src/notion.js
@@ -48214,16 +48219,30 @@ async function deleteOldUnreadFeedItemsFromNotion() {
 
 
 
+main.config();
+const {
+  RUN_FREQUENCY
+} = process.env;
+
 async function getNewFeedItemsFrom(feedUrl) {
   const parser = new (rss_parser_default())();
-  const rss = await parser.parseURL(feedUrl);
-  const todaysDate = new Date().getTime() / 1000;
+  let rss;
+
+  try {
+    rss = await parser.parseURL(feedUrl);
+  } catch (error) {
+    console.error(error);
+    return [];
+  }
+
+  const currentTime = new Date().getTime() / 1000; // Filter out items that fall in the run frequency range
+
   return rss.items.filter(item => {
-    const blogPublishedDate = new Date(item.pubDate).getTime() / 1000;
+    const blogPublishedTime = new Date(item.pubDate).getTime() / 1000;
     const {
-      diffInDays
-    } = timeDifference(todaysDate, blogPublishedDate);
-    return diffInDays === 0;
+      diffInSeconds
+    } = timeDifference(currentTime, blogPublishedTime);
+    return diffInSeconds < RUN_FREQUENCY;
   });
 }
 
@@ -48235,7 +48254,6 @@ async function getNewFeedItems() {
     const {
       feedUrl
     } = feeds[i];
-    console.log(`Fetching feed items from ${feedUrl}`);
     const feedItems = await getNewFeedItemsFrom(feedUrl);
     allNewFeedItems = [...allNewFeedItems, ...feedItems];
   } // sort feed items by published date
@@ -49197,8 +49215,13 @@ function canConvert (input) {
 
 
 function htmlToMarkdownJSON(htmlContent) {
-  const turndownService = new turndown_es();
-  return turndownService.turndown(htmlContent);
+  try {
+    const turndownService = new turndown_es();
+    return turndownService.turndown(htmlContent);
+  } catch (error) {
+    console.error(error);
+    return {};
+  }
 }
 
 function jsonToNotionBlocks(markdownContent) {
