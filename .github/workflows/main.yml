@@ -1,10 +1,3 @@
-name: Get Feed
-
-on:
-  schedule:
-    - cron: '0 * * * *' # every hour
-  workflow_dispatch:
-
 jobs:
   get-feed:
     runs-on: ubuntu-latest
@@ -31,4 +24,4 @@ jobs:
           node index.js
 
       - name: Remove duplicate links
-        run: node dedupe.js   # <-- this works because dedupe.js is in repo root
+        run: node dedupe.js
