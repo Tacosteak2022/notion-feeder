@@ -4,14 +4,19 @@ const { GoogleGenerativeAI } = require("@google/generative-ai");
 const axios = require('axios');
 const { JSDOM, VirtualConsole } = require('jsdom');
 const { Readability } = require('@mozilla/readability');
-const https = require('https'); // Import HTTPS for the security fix
+const https = require('https');
 
+// Init Clients
 const notion = new Client({ auth: process.env.NOTION_API_TOKEN });
 const parser = new Parser();
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 const FEEDS_DB_ID = process.env.NOTION_FEEDS_DATABASE_ID;
 const READER_DB_ID = process.env.NOTION_READER_DATABASE_ID;
+
+// --- SETTINGS ---
+// We use the specific model version '001' to avoid 404 errors with aliases
+const MODEL_NAME = "gemini-1.5-flash-001"; 
 
 const SYSTEM_PROMPT = `
 You are a financial analyst. Summarize this article for an investor.
@@ -21,8 +26,12 @@ Format strictly:
 - **Why it matters**: Impact on the market.
 `;
 
-// FIX: Create an agent that ignores SSL certificate errors (fixes "certificate has expired")
+// Fix for "Certificate has expired" errors
 const httpsAgent = new https.Agent({ rejectUnauthorized: false });
+
+// Fix for "CSS stylesheet" errors
+const virtualConsole = new VirtualConsole();
+virtualConsole.on("error", () => { /* Ignore CSS errors */ });
 
 async function main() {
   try {
@@ -56,26 +65,27 @@ async function main() {
 
         // 2. Scrape
         const { data } = await axios.get(item.link, { 
-            timeout: 15000, // Increased timeout
-            httpsAgent: httpsAgent, // Apply the security fix
+            timeout: 15000,
+            httpsAgent: httpsAgent, // Fixes SSL errors
             headers: { 
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36' 
+                // Fixes 403 errors by pretending to be a real Chrome browser
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' 
             } 
         });
-
-        // Fix CSS Parsing Errors
-        const virtualConsole = new VirtualConsole();
-        virtualConsole.on("error", () => { /* Ignore CSS errors */ });
 
         const doc = new JSDOM(data, { url: item.link, virtualConsole });
         const article = new Readability(doc.window.document).parse();
         
-        // Fallback content
+        // Fallback if scraping fails
         const textToRead = article ? article.textContent.substring(0, 15000) : (item.contentSnippet || "");
 
         // 3. Summarize
-        console.log("Generating AI summary...");
-        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash", systemInstruction: SYSTEM_PROMPT });
+        console.log(`Generating AI summary using ${MODEL_NAME}...`);
+        const model = genAI.getGenerativeModel({ 
+            model: MODEL_NAME, // Using the specific version
+            systemInstruction: SYSTEM_PROMPT 
+        });
+        
         const result = await model.generateContent(textToRead);
         const summary = result.response.text();
         const safeSummary = summary.substring(0, 2000);
@@ -92,8 +102,8 @@ async function main() {
         console.log(`Saved: ${item.title}`);
 
       } catch (e) {
-        const title = item ? item.title : "Unknown Article";
-        // Log error but keep going
+        const title = item ? item.title : "Unknown";
+        // Log error but do not crash
         console.error(`Failed to process "${title}" from ${url}: ${e.message}`);
       }
     }
