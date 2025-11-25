@@ -6,7 +6,7 @@ const { JSDOM, VirtualConsole } = require('jsdom');
 const { Readability } = require('@mozilla/readability');
 const https = require('https');
 
-// Init Clients
+// 1. AUTHENTICATION
 const notion = new Client({ auth: process.env.NOTION_API_TOKEN });
 const parser = new Parser();
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
@@ -14,8 +14,8 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 const FEEDS_DB_ID = process.env.NOTION_FEEDS_DATABASE_ID;
 const READER_DB_ID = process.env.NOTION_READER_DATABASE_ID;
 
-// --- SETTINGS ---
-// We use the specific version '001' to fix the 404 error
+// 2. CONFIGURATION
+// We use the specific version 001 to fix the "404 Not Found" error
 const MODEL_NAME = "gemini-1.5-flash-001"; 
 
 const SYSTEM_PROMPT = `
@@ -26,15 +26,16 @@ Format strictly:
 - **Why it matters**: Impact on the market.
 `;
 
-// SECURITY FIX: Create an agent that ignores "certificate has expired" errors
+// 3. NETWORK FIXES
+// Fix for "Certificate has expired" errors (trusts all sites)
 const httpsAgent = new https.Agent({ rejectUnauthorized: false });
 
-// CSS FIX: Ignore stylesheet errors
+// Fix for "CSS stylesheet" errors
 const virtualConsole = new VirtualConsole();
 virtualConsole.on("error", () => { /* Ignore CSS errors */ });
 
 async function main() {
-  console.log("Script Version: FINAL FIXED (Security + Model Update)"); // Look for this in logs!
+  console.log("Script Version: 3.0 (Secure + Fixed Model)"); // CHECK FOR THIS LINE IN LOGS
 
   try {
     console.log('Fetching feeds from Notion...');
@@ -54,7 +55,7 @@ async function main() {
 
         console.log(`Checking: ${item.title}`);
         
-        // 1. Check Duplicates
+        // DEDUPLICATION CHECK
         const existing = await notion.databases.query({
             database_id: READER_DB_ID,
             filter: { property: 'Link', url: { equals: item.link } }
@@ -65,10 +66,10 @@ async function main() {
             continue; 
         }
 
-        // 2. Scrape
+        // SCRAPE (With Header Fix for 403 errors)
         const { data } = await axios.get(item.link, { 
             timeout: 15000,
-            httpsAgent: httpsAgent, // Applies the security fix
+            httpsAgent: httpsAgent, 
             headers: { 
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' 
             } 
@@ -79,7 +80,7 @@ async function main() {
         
         const textToRead = article ? article.textContent.substring(0, 15000) : (item.contentSnippet || "");
 
-        // 3. Summarize
+        // SUMMARIZE
         console.log(`Generating AI summary using ${MODEL_NAME}...`);
         const model = genAI.getGenerativeModel({ 
             model: MODEL_NAME, 
@@ -90,7 +91,7 @@ async function main() {
         const summary = result.response.text();
         const safeSummary = summary.substring(0, 2000);
 
-        // 4. Post to Notion
+        // POST
         await notion.pages.create({
             parent: { database_id: READER_DB_ID },
             properties: {
