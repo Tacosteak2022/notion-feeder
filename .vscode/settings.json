@@ -1,7 +1,0 @@
-{
-  "[javascript]": {
-    "editor.codeActionsOnSave": {
-      "source.organizeImports": false
-    }
-  }
-}
