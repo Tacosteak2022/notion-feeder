@@ -29,9 +29,14 @@ async function main() {
     console.log(`Found ${feedUrls.length} feeds.`);
     
     for (const url of feedUrls) {
+      // FIX: Define item OUTSIDE the try block so catch can see it
+      let item = null;
+      
       try {
+        constTZ = await parser.parseURL(url);
         const feed = await parser.parseURL(url);
-        const item = feed.items[0]; 
+        item = feed.items[0]; 
+        
         if (!item) continue;
 
         console.log(`Checking: ${item.title}`);
@@ -41,19 +46,30 @@ async function main() {
             database_id: READER_DB_ID,
             filter: { property: 'Link', url: { equals: item.link } }
         });
-        if (existing.results.length > 0) { console.log('Skipping existing.'); continue; }
+        
+        if (existing.results.length > 0) { 
+            console.log('Skipping existing.'); 
+            continue; 
+        }
 
-        // 2. Scrape
-        const { data } = await axios.get(item.link, { timeout: 10000 });
+        // 2. Scrape (Timeout added to prevent hanging)
+        const { data } = await axios.get(item.link, { 
+            timeout: 5000, 
+            headers: { 'User-Agent': 'Mozilla/5.0' } 
+        });
+        
         const doc = new JSDOM(data, { url: item.link });
         const article = new Readability(doc.window.document).parse();
-        const textToRead = article ? article.textContent.substring(0, 20000) : item.contentSnippet;
+        
+        // Fallback: If scraping fails, use RSS snippet
+        const textToRead = article ? article.textContent.substring(0, 15000) : (item.contentSnippet || "");
 
         // 3. Summarize
+        console.log("Generating AI summary...");
         const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash", systemInstruction: SYSTEM_PROMPT });
         const result = await model.generateContent(textToRead);
         const summary = result.response.text();
-        const safeSummary = summary.substring(0, 2000);
+        const safeSummary = summary.substring(0, 2000); // Notion limit
 
         // 4. Post to Notion
         await notion.pages.create({
@@ -65,7 +81,6 @@ async function main() {
                 "Link": { 
                     url: item.link 
                 },
-                // FIXED: Capital "S" to match your Notion Database
                 "AI Summary": { 
                     rich_text: [
                         { type: "text", text: { content: safeSummary } }
@@ -76,10 +91,15 @@ async function main() {
         console.log(`Saved: ${item.title}`);
 
       } catch (e) {
-        console.error(`Failed to save "${item.title}":`, e.body || e.message);
+        // FIX: Now we handle errors gracefully without crashing the whole script
+        const title = item ? item.title : "Unknown Article";
+        console.error(`Failed to process "${title}" from ${url}:`);
+        console.error(e.message);
       }
     }
-  } catch (e) { console.error('Main Error:', e.message); }
+  } catch (e) { 
+      console.error('Critical Main Error:', e.message); 
+  }
 }
 
 main();
