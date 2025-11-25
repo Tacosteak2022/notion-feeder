@@ -22,12 +22,11 @@ jobs:
         with:
           node-version: 18
 
-      - name: Force Install Latest Libraries
-        # This command deletes the problem file and forces the latest AI version
+      - name: Force Install Dependencies
+        # This command deletes old locks and FORCES the latest version of Gemini
         run: |
           rm -f package-lock.json
-          npm install
-          npm install @google/generative-ai@latest axios jsdom @mozilla/readability rss-parser
+          npm install @google/generative-ai@latest @notionhq/client axios jsdom @mozilla/readability rss-parser
 
       - name: Run AI Feed Summarizer
         run: node ai-feed.js
