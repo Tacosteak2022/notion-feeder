@@ -33,26 +33,7 @@ const httpsAgent = new https.Agent({ rejectUnauthorized: false });
 const virtualConsole = new VirtualConsole();
 virtualConsole.on("error", () => { /* Ignore CSS errors */ });
 
-async function main() {
-    console.log("Script Version: FINAL FIXED (Security + Model Update)"); // Look for this in logs!
-
-    try {
-        console.log('Fetching feeds from Notion...');
-        const response = await notion.databases.query({ database_id: FEEDS_DB_ID });
-        const feedUrls = response.results.map(p => p.properties.Link?.url || p.properties.URL?.url).filter(u => u);
-
-        console.log(`Found ${feedUrls.length} feeds.`);
-
-        for (const url of feedUrls) {
-            let item = null;
-
-            try {
-                const feed = await parser.parseURL(url);
-                item = feed.items[0];
-
-                if (!item || !item.link) continue;
-
-                ```javascript
+```javascript
 const { Client } = require('@notionhq/client');
 const Parser = require('rss-parser');
 const { GoogleGenerativeAI } = require("@google/generative-ai");
