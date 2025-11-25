@@ -1,6 +1,6 @@
 {
   "name": "notion-ai-feed-reader",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "private": true,
   "description": "RSS Feed Reader with Gemini AI Summaries",
   "main": "ai-feed.js",
