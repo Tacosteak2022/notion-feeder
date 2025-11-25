@@ -2,7 +2,7 @@ name: Get Feed
 
 on:
   schedule:
-    - cron: '0 * * * *' # every hour
+    - cron: '0 * * * *' # Every hour
   workflow_dispatch:
 
 jobs:
@@ -12,7 +12,7 @@ jobs:
       NOTION_API_TOKEN: ${{ secrets.NOTION_API_TOKEN }}
       NOTION_READER_DATABASE_ID: ${{ secrets.NOTION_READER_DATABASE_ID }}
       NOTION_FEEDS_DATABASE_ID: ${{ secrets.NOTION_FEEDS_DATABASE_ID }}
-      RUN_FREQUENCY: 18000
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
@@ -20,15 +20,10 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v2
         with:
-          node-version: 14
+          node-version: 18
 
-      - name: Install Notion SDK
-        run: npm install @notionhq/client
+      - name: Install Dependencies
+        run: npm install
 
-      - name: Update Notion Feed
-        run: |
-          curl -o index.js https://raw.githubusercontent.com/ravgeetdhillon/notion-feeder/build/dist/index.js
-          node index.js
-
-      - name: Remove duplicate links
-        run: node dedupe.js   # <-- this works because dedupe.js is in repo root
+      - name: Run AI Feed Summarizer
+        run: node ai-feed.js
