@@ -22,8 +22,12 @@ jobs:
         with:
           node-version: 18
 
-      - name: Install Dependencies
-        run: npm install
+      - name: Force Install Latest Libraries
+        # This command deletes the problem file and forces the latest AI version
+        run: |
+          rm -f package-lock.json
+          npm install
+          npm install @google/generative-ai@latest axios jsdom @mozilla/readability rss-parser
 
       - name: Run AI Feed Summarizer
         run: node ai-feed.js
