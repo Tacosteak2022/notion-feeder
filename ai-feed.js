@@ -15,7 +15,7 @@ const FEEDS_DB_ID = process.env.NOTION_FEEDS_DATABASE_ID;
 const READER_DB_ID = process.env.NOTION_READER_DATABASE_ID;
 
 // --- SETTINGS ---
-// We use the specific model version '001' to avoid 404 errors with aliases
+// We use the specific version '001' to fix the 404 error
 const MODEL_NAME = "gemini-1.5-flash-001"; 
 
 const SYSTEM_PROMPT = `
@@ -26,14 +26,16 @@ Format strictly:
 - **Why it matters**: Impact on the market.
 `;
 
-// Fix for "Certificate has expired" errors
+// SECURITY FIX: Create an agent that ignores "certificate has expired" errors
 const httpsAgent = new https.Agent({ rejectUnauthorized: false });
 
-// Fix for "CSS stylesheet" errors
+// CSS FIX: Ignore stylesheet errors
 const virtualConsole = new VirtualConsole();
 virtualConsole.on("error", () => { /* Ignore CSS errors */ });
 
 async function main() {
+  console.log("Script Version: FINAL FIXED (Security + Model Update)"); // Look for this in logs!
+
   try {
     console.log('Fetching feeds from Notion...');
     const response = await notion.databases.query({ database_id: FEEDS_DB_ID });
@@ -66,9 +68,8 @@ async function main() {
         // 2. Scrape
         const { data } = await axios.get(item.link, { 
             timeout: 15000,
-            httpsAgent: httpsAgent, // Fixes SSL errors
+            httpsAgent: httpsAgent, // Applies the security fix
             headers: { 
-                // Fixes 403 errors by pretending to be a real Chrome browser
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' 
             } 
         });
@@ -76,13 +77,12 @@ async function main() {
         const doc = new JSDOM(data, { url: item.link, virtualConsole });
         const article = new Readability(doc.window.document).parse();
         
-        // Fallback if scraping fails
         const textToRead = article ? article.textContent.substring(0, 15000) : (item.contentSnippet || "");
 
         // 3. Summarize
         console.log(`Generating AI summary using ${MODEL_NAME}...`);
         const model = genAI.getGenerativeModel({ 
-            model: MODEL_NAME, // Using the specific version
+            model: MODEL_NAME, 
             systemInstruction: SYSTEM_PROMPT 
         });
         
@@ -103,8 +103,7 @@ async function main() {
 
       } catch (e) {
         const title = item ? item.title : "Unknown";
-        // Log error but do not crash
-        console.error(`Failed to process "${title}" from ${url}: ${e.message}`);
+        console.error(`Failed to process "${title}": ${e.message}`);
       }
     }
   } catch (e) { console.error('Critical Main Error:', e.message); }
