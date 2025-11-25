@@ -13,6 +13,7 @@ jobs:
       NOTION_READER_DATABASE_ID: ${{ secrets.NOTION_READER_DATABASE_ID }}
       NOTION_FEEDS_DATABASE_ID: ${{ secrets.NOTION_FEEDS_DATABASE_ID }}
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      RUN_FREQUENCY: 18000 # 5 hours in seconds
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
