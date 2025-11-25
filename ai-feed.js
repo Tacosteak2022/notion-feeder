@@ -16,7 +16,7 @@ const READER_DB_ID = process.env.NOTION_READER_DATABASE_ID;
 
 // --- SETTINGS ---
 // We use the specific version '001' to fix the 404 error
-const MODEL_NAME = "gemini-1.5-flash-001";
+const MODEL_NAME = "gemini-2.5-pro";
 
 const SYSTEM_PROMPT = `
 You are a financial analyst. Summarize this article for an investor.
