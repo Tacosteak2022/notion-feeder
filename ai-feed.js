@@ -2,7 +2,7 @@ const { Client } = require('@notionhq/client');
 const Parser = require('rss-parser');
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 const axios = require('axios');
-const { JSDOM } = require('jsdom');
+const { JSDOM, VirtualConsole } = require('jsdom');
 const { Readability } = require('@mozilla/readability');
 
 const notion = new Client({ auth: process.env.NOTION_API_TOKEN });
@@ -29,15 +29,14 @@ async function main() {
     console.log(`Found ${feedUrls.length} feeds.`);
     
     for (const url of feedUrls) {
-      // FIX: Define item OUTSIDE the try block so catch can see it
+      // Define item here so it is available in catch block
       let item = null;
-      
+
       try {
-        constTZ = await parser.parseURL(url);
         const feed = await parser.parseURL(url);
         item = feed.items[0]; 
         
-        if (!item) continue;
+        if (!item || !item.link) continue;
 
         console.log(`Checking: ${item.title}`);
         
@@ -52,16 +51,25 @@ async function main() {
             continue; 
         }
 
-        // 2. Scrape (Timeout added to prevent hanging)
+        // 2. Scrape
+        // We use a real User-Agent to prevent 403 errors from Substack/others
         const { data } = await axios.get(item.link, { 
-            timeout: 5000, 
-            headers: { 'User-Agent': 'Mozilla/5.0' } 
+            timeout: 10000,
+            headers: { 
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36' 
+            } 
+        });
+
+        // Fix CSS Parsing Errors by using a virtual console that ignores them
+        const virtualConsole = new VirtualConsole();
+        virtualConsole.on("error", () => { /* Ignore CSS errors */ });
+
+        const doc = new JSDOM(data, { 
+            url: item.link, 
+            virtualConsole 
         });
         
-        const doc = new JSDOM(data, { url: item.link });
         const article = new Readability(doc.window.document).parse();
-        
-        // Fallback: If scraping fails, use RSS snippet
         const textToRead = article ? article.textContent.substring(0, 15000) : (item.contentSnippet || "");
 
         // 3. Summarize
@@ -69,7 +77,7 @@ async function main() {
         const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash", systemInstruction: SYSTEM_PROMPT });
         const result = await model.generateContent(textToRead);
         const summary = result.response.text();
-        const safeSummary = summary.substring(0, 2000); // Notion limit
+        const safeSummary = summary.substring(0, 2000);
 
         // 4. Post to Notion
         await notion.pages.create({
@@ -91,15 +99,11 @@ async function main() {
         console.log(`Saved: ${item.title}`);
 
       } catch (e) {
-        // FIX: Now we handle errors gracefully without crashing the whole script
         const title = item ? item.title : "Unknown Article";
-        console.error(`Failed to process "${title}" from ${url}:`);
-        console.error(e.message);
+        console.error(`Failed to process "${title}" from ${url}:`, e.message);
       }
     }
-  } catch (e) { 
-      console.error('Critical Main Error:', e.message); 
-  }
+  } catch (e) { console.error('Critical Main Error:', e.message); }
 }
 
 main();
