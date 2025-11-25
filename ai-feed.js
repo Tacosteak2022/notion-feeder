@@ -94,7 +94,7 @@ async function main() {
                 await notion.pages.create({
                     parent: { database_id: READER_DB_ID },
                     properties: {
-                        "Name": { title: [{ type: "text", text: { content: item.title } }] },
+                        "Title": { title: [{ type: "text", text: { content: item.title } }] },
                         "Link": { url: item.link },
                         "AI Summary": { rich_text: [{ type: "text", text: { content: safeSummary } }] }
                     }
@@ -110,5 +110,3 @@ async function main() {
 }
 
 main();
-
-
