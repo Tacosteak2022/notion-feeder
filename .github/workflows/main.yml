@@ -2,7 +2,7 @@ name: Get Feed
 
 on:
   schedule:
-    - cron: '0 * * * *' # Every hour
+    - cron: '0 * * * *' # every hour
   workflow_dispatch:
 
 jobs:
@@ -12,8 +12,7 @@ jobs:
       NOTION_API_TOKEN: ${{ secrets.NOTION_API_TOKEN }}
       NOTION_READER_DATABASE_ID: ${{ secrets.NOTION_READER_DATABASE_ID }}
       NOTION_FEEDS_DATABASE_ID: ${{ secrets.NOTION_FEEDS_DATABASE_ID }}
-      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-      # We removed RUN_FREQUENCY as we handle it in code or run hourly
+      RUN_FREQUENCY: 18000
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
@@ -21,107 +20,15 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v2
         with:
-          node-version: 18 # MUST be 18 or higher for Gemini/JSDOM
+          node-version: 14
 
-      - name: Install Dependencies
-        # This reads the package.json you just updated
-        run: npm install
+      - name: Install Notion SDK
+        run: npm install @notionhq/client
 
-      # This creates the ai-feed.js file on the fly just in case you missed creating it.
-      # If you already created ai-feed.js in your repo, you can delete this specific step,
-      # but keeping it here guarantees it works even if you forgot.
-      - name: Create AI Script (Safety Net)
+      - name: Update Notion Feed
         run: |
-          cat << 'EOF' > ai-feed.js
-          const { Client } = require('@notionhq/client');
-          const Parser = require('rss-parser');
-          const { GoogleGenerativeAI } = require("@google/generative-ai");
-          const axios = require('axios');
-          const { JSDOM } = require('jsdom');
-          const { Readability } = require('@mozilla/readability');
+          curl -o index.js https://raw.githubusercontent.com/ravgeetdhillon/notion-feeder/build/dist/index.js
+          node index.js
 
-          const notion = new Client({ auth: process.env.NOTION_API_TOKEN });
-          const parser = new Parser();
-          const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-
-          const FEEDS_DB_ID = process.env.NOTION_FEEDS_DATABASE_ID;
-          const READER_DB_ID = process.env.NOTION_READER_DATABASE_ID;
-
-          const SYSTEM_PROMPT = `
-          You are a helpful research assistant. Read the provided article text and summarize it.
-          Format the output strictly as follows:
-          - **TL;DR**: A one-sentence summary.
-          - **Key Points**: Bullet points of the most important details.
-          - **Why it matters**: Why this news is significant.
-          `;
-
-          async function getFeedUrls() {
-            const response = await notion.databases.query({ database_id: FEEDS_DB_ID });
-            return response.results.map(page => page.properties.Link?.url || page.properties.URL?.url).filter(url => url);
-          }
-
-          async function extractArticleContent(url) {
-            try {
-              const { data } = await axios.get(url, { timeout: 10000 });
-              const doc = new JSDOM(data, { url });
-              const reader = new Readability(doc.window.document);
-              const article = reader.parse();
-              return article ? article.textContent : null;
-            } catch (error) {
-              console.error(`Failed to scrape ${url}:`, error.message);
-              return null;
-            }
-          }
-
-          async function generateSummary(text) {
-            if (!text) return "Could not extract text.";
-            const truncated = text.substring(0, 30000);
-            try {
-              const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash", systemInstruction: SYSTEM_PROMPT });
-              const result = await model.generateContent(truncated);
-              return result.response.text();
-            } catch (error) {
-              return "AI generation failed: " + error.message;
-            }
-          }
-
-          async function postToNotion(title, url, summary, feedName) {
-              const existing = await notion.databases.query({
-                  database_id: READER_DB_ID,
-                  filter: { property: 'Link', url: { equals: url } }
-              });
-              if (existing.results.length > 0) { console.log(`Skipping existing: ${title}`); return; }
-
-              await notion.pages.create({
-                  parent: { database_id: READER_DB_ID },
-                  properties: {
-                      Name: { title: [{ text: { content: title } }] },
-                      Link: { url: url },
-                  },
-                  children: [{ object: "block", type: "paragraph", paragraph: { rich_text: [{ type: "text", text: { content: summary.substring(0, 2000) } }] } }]
-              });
-              console.log(`Saved: ${title}`);
-          }
-
-          async function main() {
-            const feedUrls = await getFeedUrls();
-            console.log(`Found ${feedUrls.length} feeds.`);
-            for (const url of feedUrls) {
-              try {
-                const feed = await parser.parseURL(url);
-                const latest = feed.items.slice(0, 1); // Only check the very latest item
-                for (const item of latest) {
-                  if (!item.link) continue;
-                  console.log(`Checking: ${item.title}`);
-                  const content = await extractArticleContent(item.link);
-                  const summary = await generateSummary(content);
-                  await postToNotion(item.title, item.link, summary, feed.title);
-                }
-              } catch (e) { console.error(`Error processing feed ${url}:`, e.message); }
-            }
-          }
-          main();
-          EOF
-
-      - name: Run AI Feed Summarizer
-        run: node ai-feed.js
+      - name: Remove duplicate links
+        run: node dedupe.js   # <-- this works because dedupe.js is in repo root
