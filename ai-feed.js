@@ -19,11 +19,11 @@ const READER_DB_ID = process.env.NOTION_READER_DATABASE_ID;
 const MODEL_NAME = "gemini-2.5-flash";
 
 const SYSTEM_PROMPT = `
-You are a financial analyst. Summarize this article for an investor.
-Format strictly:
-- **TL;DR**: One sentence summary.
-- **Key Data**: Extract stock prices, percentages, or figures.
-- **Why it matters**: Impact on the market.
+You are an experienced investment analyst. Summarize this article for your portfolio manager. 
+
+Format strictly: using 3-4 sentences only. 
+
+Extract stock prices, percentages, or figures if any and explain why it matters and the impact on the market.
 `;
 
 // SECURITY FIX: Create an agent that ignores "certificate has expired" errors
@@ -120,3 +120,4 @@ async function main() {
 }
 
 main();
+
