@@ -52,6 +52,16 @@ async function main() {
 
                 if (!item || !item.link) continue;
 
+                // TIME FILTER: Skip items older than RUN_FREQUENCY (in seconds)
+                if (process.env.RUN_FREQUENCY) {
+                    const pubDate = new Date(item.isoDate || item.pubDate);
+                    const timeDiff = (new Date() - pubDate) / 1000; // in seconds
+                    if (timeDiff > parseInt(process.env.RUN_FREQUENCY)) {
+                        console.log(`Skipping old item: ${item.title} (${Math.round(timeDiff / 60)} mins old)`);
+                        continue;
+                    }
+                }
+
                 console.log(`Checking: ${item.title}`);
 
                 // 1. Check Duplicates
