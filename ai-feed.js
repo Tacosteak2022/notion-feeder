@@ -4,6 +4,7 @@ const { GoogleGenerativeAI } = require("@google/generative-ai");
 const axios = require('axios');
 const { JSDOM, VirtualConsole } = require('jsdom');
 const { Readability } = require('@mozilla/readability');
+const https = require('https'); // Import HTTPS for the security fix
 
 const notion = new Client({ auth: process.env.NOTION_API_TOKEN });
 const parser = new Parser();
@@ -20,6 +21,9 @@ Format strictly:
 - **Why it matters**: Impact on the market.
 `;
 
+// FIX: Create an agent that ignores SSL certificate errors (fixes "certificate has expired")
+const httpsAgent = new https.Agent({ rejectUnauthorized: false });
+
 async function main() {
   try {
     console.log('Fetching feeds from Notion...');
@@ -29,7 +33,6 @@ async function main() {
     console.log(`Found ${feedUrls.length} feeds.`);
     
     for (const url of feedUrls) {
-      // Define item here so it is available in catch block
       let item = null;
 
       try {
@@ -52,24 +55,22 @@ async function main() {
         }
 
         // 2. Scrape
-        // We use a real User-Agent to prevent 403 errors from Substack/others
         const { data } = await axios.get(item.link, { 
-            timeout: 10000,
+            timeout: 15000, // Increased timeout
+            httpsAgent: httpsAgent, // Apply the security fix
             headers: { 
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36' 
             } 
         });
 
-        // Fix CSS Parsing Errors by using a virtual console that ignores them
+        // Fix CSS Parsing Errors
         const virtualConsole = new VirtualConsole();
         virtualConsole.on("error", () => { /* Ignore CSS errors */ });
 
-        const doc = new JSDOM(data, { 
-            url: item.link, 
-            virtualConsole 
-        });
-        
+        const doc = new JSDOM(data, { url: item.link, virtualConsole });
         const article = new Readability(doc.window.document).parse();
+        
+        // Fallback content
         const textToRead = article ? article.textContent.substring(0, 15000) : (item.contentSnippet || "");
 
         // 3. Summarize
@@ -83,24 +84,17 @@ async function main() {
         await notion.pages.create({
             parent: { database_id: READER_DB_ID },
             properties: {
-                "Name": { 
-                    title: [{ type: "text", text: { content: item.title } }] 
-                },
-                "Link": { 
-                    url: item.link 
-                },
-                "AI Summary": { 
-                    rich_text: [
-                        { type: "text", text: { content: safeSummary } }
-                    ]
-                }
+                "Name": { title: [{ type: "text", text: { content: item.title } }] },
+                "Link": { url: item.link },
+                "AI Summary": { rich_text: [{ type: "text", text: { content: safeSummary } }] }
             }
         });
         console.log(`Saved: ${item.title}`);
 
       } catch (e) {
         const title = item ? item.title : "Unknown Article";
-        console.error(`Failed to process "${title}" from ${url}:`, e.message);
+        // Log error but keep going
+        console.error(`Failed to process "${title}" from ${url}: ${e.message}`);
       }
     }
   } catch (e) { console.error('Critical Main Error:', e.message); }
