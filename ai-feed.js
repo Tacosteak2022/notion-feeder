@@ -5,18 +5,11 @@ const axios = require('axios');
 const { JSDOM, VirtualConsole } = require('jsdom');
 const { Readability } = require('@mozilla/readability');
 const https = require('https');
+const { execSync } = require('child_process');
 
 // Init Clients
 const notion = new Client({ auth: process.env.NOTION_API_TOKEN });
-const parser = new Parser({
-    headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'application/rss+xml, application/xml, text/xml; q=0.1',
-    },
-    requestOptions: {
-        rejectUnauthorized: false // Fix for certificate errors
-    }
-});
+const parser = new Parser();
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 const FEEDS_DB_ID = process.env.NOTION_FEEDS_DATABASE_ID;
@@ -41,8 +34,36 @@ const httpsAgent = new https.Agent({ rejectUnauthorized: false });
 const virtualConsole = new VirtualConsole();
 virtualConsole.on("error", () => { /* Ignore CSS errors */ });
 
+// Helper to fetch feed with fallback
+async function fetchFeed(url) {
+    try {
+        // 1. Try Axios
+        const response = await axios.get(url, {
+            timeout: 10000,
+            httpsAgent: httpsAgent,
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'application/rss+xml, application/xml, text/xml; q=0.1'
+            }
+        });
+        return response.data;
+    } catch (axiosError) {
+        console.warn(`Axios fetch failed for ${url}: ${axiosError.message}. Trying curl...`);
+        try {
+            // 2. Try Curl (often bypasses 403/TLS issues in CI)
+            // -L follows redirects, -k ignores SSL errors
+            const curlCmd = `curl -L -k -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" "${url}"`;
+            const stdout = execSync(curlCmd, { timeout: 15000, encoding: 'utf-8' });
+            if (!stdout || stdout.length < 50) throw new Error("Curl returned empty/short response");
+            return stdout;
+        } catch (curlError) {
+            throw new Error(`All fetch methods failed. Axios: ${axiosError.message}, Curl: ${curlError.message}`);
+        }
+    }
+}
+
 async function main() {
-    console.log("Script Version: DIGEST + FAILED FEEDS + SUBSTACK FIX + SKIP AI"); // Look for this in logs!
+    console.log("Script Version: DIGEST + FAILED FEEDS + SUBSTACK FIX + SKIP AI + CURL FALLBACK");
 
     try {
         console.log('Fetching feeds from Notion...');
@@ -58,17 +79,9 @@ async function main() {
             let item = null;
 
             try {
-                // FETCH FIX: Use axios to get the feed XML first (bypasses 403)
-                const feedResponse = await axios.get(url, {
-                    timeout: 10000,
-                    httpsAgent: httpsAgent,
-                    headers: {
-                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                        'Accept': 'application/rss+xml, application/xml, text/xml; q=0.1'
-                    }
-                });
-
-                const feed = await parser.parseString(feedResponse.data);
+                // FETCH FIX: Use robust fetchFeed helper
+                const feedData = await fetchFeed(url);
+                const feed = await parser.parseString(feedData);
                 item = feed.items[0];
 
                 if (!item || !item.link) continue;
