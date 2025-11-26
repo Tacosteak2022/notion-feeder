@@ -5,18 +5,11 @@ const axios = require('axios');
 const { JSDOM, VirtualConsole } = require('jsdom');
 const { Readability } = require('@mozilla/readability');
 const https = require('https');
+const { execSync } = require('child_process');
 
 // Init Clients
 const notion = new Client({ auth: process.env.NOTION_API_TOKEN });
-
-// LEGACY SETUP: Use simple parser without custom headers
-// This matches the configuration that was reported to work previously.
-const parser = new Parser({
-    requestOptions: {
-        rejectUnauthorized: false // Keep this for Stockbiz certificate error
-    }
-});
-
+const parser = new Parser();
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 const FEEDS_DB_ID = process.env.NOTION_FEEDS_DATABASE_ID;
@@ -40,8 +33,49 @@ const httpsAgent = new https.Agent({ rejectUnauthorized: false });
 const virtualConsole = new VirtualConsole();
 virtualConsole.on("error", () => { /* Ignore CSS errors */ });
 
+// Helper to clean XML (remove BOM, leading whitespace)
+function cleanXml(xml) {
+    if (!xml) return "";
+    return xml.trim().replace(/^\uFEFF/, '');
+}
+
+// Helper to fetch feed with fallback
+async function fetchFeed(url) {
+    try {
+        // 1. Try Axios (Standard)
+        const response = await axios.get(url, {
+            timeout: 10000,
+            httpsAgent: httpsAgent,
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'application/rss+xml, application/xml, text/xml; q=0.1'
+            }
+        });
+        return cleanXml(response.data);
+    } catch (axiosError) {
+        console.warn(`Axios fetch failed for ${url}: ${axiosError.message}. Trying curl...`);
+
+        try {
+            // 2. Try Curl with Googlebot UA (often whitelisted)
+            const curlCmdBot = `curl -L -k -sS -A "Googlebot/2.1 (+http://www.google.com/bot.html)" "${url}"`;
+            const stdoutBot = execSync(curlCmdBot, { timeout: 15000, encoding: 'utf-8' });
+
+            if (!stdoutBot || stdoutBot.length < 50) throw new Error("Curl (Googlebot) returned empty/short response");
+
+            // Check for HTML CAPTCHA
+            if (stdoutBot.trim().startsWith("<!DOCTYPE html") || stdoutBot.includes("Just a moment...")) {
+                const snippet = stdoutBot.substring(0, 100).replace(/\n/g, " ");
+                throw new Error(`Curl (Googlebot) returned HTML: ${snippet}...`);
+            }
+            return cleanXml(stdoutBot);
+        } catch (curlError) {
+            throw new Error(`All fetch methods failed. Last error: ${curlError.message}`);
+        }
+    }
+}
+
 async function main() {
-    console.log("Script Version: LEGACY FETCH MODE (RSS-PARSER 3.12)");
+    console.log("Script Version: ROBUST FETCH (AXIOS + CLEANING + CURL FALLBACK)");
 
     try {
         console.log('Fetching feeds from Notion...');
@@ -57,9 +91,9 @@ async function main() {
             let item = null;
 
             try {
-                // LEGACY FETCH: Simple parseURL
-                // We removed axios/curl to match the old working setup
-                const feed = await parser.parseURL(url);
+                // ROBUST FETCH: Fetch string -> Clean -> Parse
+                const feedData = await fetchFeed(url);
+                const feed = await parser.parseString(feedData);
                 item = feed.items[0];
 
                 if (!item || !item.link) continue;
