@@ -9,20 +9,7 @@ const { execSync } = require('child_process');
 
 // Init Clients
 const notion = new Client({ auth: process.env.NOTION_API_TOKEN });
-
-// HYBRID SETUP: Lenient Parser
-const parser = new Parser({
-    xml2js: {
-        strict: false, // Handle "Unquoted attribute value" (Reddit)
-        trim: true,
-        normalize: true,
-        normalizeTags: true
-    },
-    requestOptions: {
-        rejectUnauthorized: false // Fix for Stockbiz certificate error
-    }
-});
-
+const parser = new Parser();
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 const FEEDS_DB_ID = process.env.NOTION_FEEDS_DATABASE_ID;
@@ -52,8 +39,8 @@ function cleanXml(xml) {
     return xml.trim().replace(/^\uFEFF/, '');
 }
 
-// Helper to fetch feed with fallback (Axios -> Curl)
-async function fetchFeedFallback(url) {
+// Helper to fetch feed with fallback
+async function fetchFeed(url) {
     try {
         // 1. Try Axios (Standard)
         const response = await axios.get(url, {
@@ -88,7 +75,7 @@ async function fetchFeedFallback(url) {
 }
 
 async function main() {
-    console.log("Script Version: HYBRID FETCH (NATIVE FIRST -> ROBUST FALLBACK)");
+    console.log("Script Version: ROBUST FETCH RESTORED (AXIOS + CLEANING + CURL FALLBACK)");
 
     try {
         console.log('Fetching feeds from Notion...');
@@ -102,21 +89,13 @@ async function main() {
 
         for (const url of feedUrls) {
             let item = null;
-            let feed = null;
 
             try {
-                // 1. Try Native Parser (Best for Substack if it works)
-                try {
-                    feed = await parser.parseURL(url);
-                } catch (nativeError) {
-                    console.warn(`Native parser failed for ${url}: ${nativeError.message}. Trying robust fallback...`);
-
-                    // 2. Fallback to Robust Fetch (Axios/Curl + Cleaning)
-                    const feedData = await fetchFeedFallback(url);
-                    feed = await parser.parseString(feedData);
-                }
-
+                // ROBUST FETCH: Fetch string -> Clean -> Parse
+                const feedData = await fetchFeed(url);
+                const feed = await parser.parseString(feedData);
                 item = feed.items[0];
+
                 if (!item || !item.link) continue;
 
                 // TIME FILTER: Skip items older than RUN_FREQUENCY (in seconds)
