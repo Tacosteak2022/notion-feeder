@@ -196,18 +196,6 @@ async function fetchReportLinks() {
                     },
                     "Link": {
                         url: report.link
-                    },
-                    "Date": {
-                        date: isoDate ? { start: isoDate } : null
-                    },
-                    "AI Summary": {
-                        rich_text: [
-                            {
-                                text: {
-                                    content: "FinSuccess Report - Direct Download"
-                                }
-                            }
-                        ]
                     }
                 }
             });
