@@ -34,7 +34,7 @@ const virtualConsole = new VirtualConsole();
 virtualConsole.on("error", () => { /* Ignore CSS errors */ });
 
 async function main() {
-    console.log("Script Version: FINAL FIXED (Security + Model Update)"); // Look for this in logs!
+    console.log("Script Version: DIGEST MODE (Single Page + Deduplication)"); // Look for this in logs!
 
     try {
         console.log('Fetching feeds from Notion...');
@@ -42,6 +42,8 @@ async function main() {
         const feedUrls = response.results.map(p => p.properties.Link?.url || p.properties.URL?.url).filter(u => u);
 
         console.log(`Found ${feedUrls.length} feeds.`);
+
+        const newArticles = [];
 
         for (const url of feedUrls) {
             let item = null;
@@ -64,25 +66,15 @@ async function main() {
 
                 console.log(`Checking: ${item.title}`);
 
-                // 1. Check Duplicates & Backfill Status
-                let pageToUpdate = null;
+                // 1. Check Duplicates (Log Page Check)
                 const existing = await notion.databases.query({
                     database_id: READER_DB_ID,
                     filter: { property: 'Link', url: { equals: item.link } }
                 });
 
                 if (existing.results.length > 0) {
-                    const page = existing.results[0];
-                    const currentSummary = page.properties["AI Summary"]?.rich_text;
-
-                    // If summary exists and is not empty, skip
-                    if (currentSummary && currentSummary.length > 0) {
-                        console.log('Skipping existing (Summary present).');
-                        continue;
-                    } else {
-                        console.log('Existing found but Summary missing. Backfilling...');
-                        pageToUpdate = page.id;
-                    }
+                    console.log('Skipping existing.');
+                    continue;
                 }
 
                 // 2. Scrape
@@ -110,31 +102,77 @@ async function main() {
                 const summary = result.response.text();
                 const safeSummary = summary.substring(0, 2000);
 
-                // 4. Post or Update Notion
-                if (pageToUpdate) {
-                    await notion.pages.update({
-                        page_id: pageToUpdate,
-                        properties: {
-                            "AI Summary": { rich_text: [{ type: "text", text: { content: safeSummary } }] }
-                        }
-                    });
-                    console.log(`Updated (Backfilled): ${item.title}`);
-                } else {
-                    await notion.pages.create({
-                        parent: { database_id: READER_DB_ID },
-                        properties: {
-                            "Title": { title: [{ type: "text", text: { content: item.title } }] },
-                            "Link": { url: item.link },
-                            "AI Summary": { rich_text: [{ type: "text", text: { content: safeSummary } }] }
-                        }
-                    });
-                    console.log(`Saved: ${item.title}`);
-                }
+                // 4. Log It (Create "Log Page" to prevent duplicates)
+                await notion.pages.create({
+                    parent: { database_id: READER_DB_ID },
+                    properties: {
+                        "Title": { title: [{ type: "text", text: { content: item.title } }] },
+                        "Link": { url: item.link },
+                        "AI Summary": { rich_text: [{ type: "text", text: { content: "Log Entry - Included in Digest" } }] }
+                    }
+                });
+                console.log(`Logged: ${item.title}`);
+
+                // 5. Add to Digest List
+                newArticles.push({
+                    title: item.title,
+                    link: item.link,
+                    summary: safeSummary
+                });
 
             } catch (e) {
                 const title = item ? item.title : "Unknown";
                 console.error(`Failed to process "${title}": ${e.message}`);
             }
+        }
+
+        // 6. Create Digest Page
+        if (newArticles.length > 0) {
+            console.log(`Creating Market Summary with ${newArticles.length} articles...`);
+
+            // Notion blocks (max 100 per request, simple split if needed, but assuming <100 for now)
+            const blocks = [];
+            for (const article of newArticles) {
+                blocks.push({
+                    object: 'block',
+                    type: 'heading_2',
+                    heading_2: {
+                        rich_text: [{ type: 'text', text: { content: article.title }, annotations: { bold: true } }]
+                    }
+                });
+                blocks.push({
+                    object: 'block',
+                    type: 'paragraph',
+                    paragraph: {
+                        rich_text: [
+                            { type: 'text', text: { content: "Source: " } },
+                            { type: 'text', text: { content: "Link", link: { url: article.link } } }
+                        ]
+                    }
+                });
+                blocks.push({
+                    object: 'block',
+                    type: 'paragraph',
+                    paragraph: {
+                        rich_text: [{ type: 'text', text: { content: article.summary } }]
+                    }
+                });
+                blocks.push({ object: 'block', type: 'divider', divider: {} });
+            }
+
+            // Create the Digest Page
+            const now = new Date().toLocaleString('en-US', { timeZone: 'Asia/Ho_Chi_Minh' });
+            await notion.pages.create({
+                parent: { database_id: READER_DB_ID },
+                properties: {
+                    "Title": { title: [{ type: "text", text: { content: `Market Summary @ ${now}` } }] },
+                    "AI Summary": { rich_text: [{ type: "text", text: { content: `Contains ${newArticles.length} articles.` } }] }
+                },
+                children: blocks.slice(0, 100) // Notion limit: 100 blocks
+            });
+            console.log("Market Summary Created Successfully!");
+        } else {
+            console.log("No new articles to summarize.");
         }
     } catch (e) { console.error('Critical Main Error:', e.message); }
 }
