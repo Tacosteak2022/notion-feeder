@@ -28,14 +28,9 @@ const MODEL_NAME = "gemini-2.5-flash";
 const SYSTEM_PROMPT = `
 You are an experienced investment analyst. Summarize this article for your portfolio manager. 
 
-**Language Rule:** - Detect the language of the provided article text.
-- If the article is in **Vietnamese**, write the summary in **Vietnamese**.
-- If the article is in **English**, write the summary in **English**.
+Format strictly: using 3-4 sentences only. 
 
-**Format strictly:**
-- Use 3-4 sentences only.
-- Extract stock prices, percentages, or figures (if any).
-- Explain why it matters and the impact on the market.
+Extract stock prices, percentages, or figures if any and explain why it matters and the impact on the market.
 `;
 
 // SECURITY FIX: Create an agent that ignores "certificate has expired" errors
@@ -339,4 +334,3 @@ async function main() {
 }
 
 main();
-

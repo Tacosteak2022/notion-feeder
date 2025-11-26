@@ -1,0 +1,40 @@
+name: Daily FinSuccess Report
+
+on:
+  schedule:
+    # Run every hour
+    - cron: '0 * * * *'
+  workflow_dispatch:
+
+jobs:
+  fetch-reports:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Create .env file
+        run: |
+          echo "FISC_COOKIE=${{ secrets.FISC_COOKIE }}" > .env
+          echo "NOTION_API_KEY=${{ secrets.NOTION_API_KEY }}" >> .env
+          echo "NOTION_API_TOKEN=${{ secrets.NOTION_API_KEY }}" >> .env
+          echo "NOTION_READER_DATABASE_ID=${{ secrets.NOTION_READER_DATABASE_ID }}" >> .env
+          echo "NOTION_FEEDS_DATABASE_ID=${{ secrets.NOTION_FEEDS_DATABASE_ID }}" >> .env
+          echo "GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}" >> .env
+          echo "RUN_FREQUENCY=86400" >> .env
+
+      - name: Run AI Feed Reader
+        run: node ai-feed.js
+        continue-on-error: true
+
+      - name: Run FinSuccess Report Fetcher
+        run: node fisc_link_extractor.js
+        continue-on-error: true
