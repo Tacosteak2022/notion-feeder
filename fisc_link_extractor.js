@@ -148,6 +148,19 @@ async function fetchReportLinks() {
 
         console.log(`✅ Found ${reports.length} reports on FinSuccess.`);
 
+        // --- Date Filtering Logic ---
+        // Get today's date in Vietnam time (DD/MM/YYYY)
+        const today = new Date().toLocaleDateString('en-GB', { timeZone: 'Asia/Ho_Chi_Minh' });
+        console.log(`📅 Today's date (Vietnam): ${today}`);
+
+        const todaysReports = reports.filter(r => r.date === today);
+        console.log(`🎯 Found ${todaysReports.length} reports from today.`);
+
+        if (todaysReports.length === 0) {
+            console.log('😴 No reports from today. Exiting.');
+            return;
+        }
+
         // --- Notion Sync Logic ---
         console.log('🔄 Syncing with Notion...');
 
@@ -165,8 +178,9 @@ async function fetchReportLinks() {
         });
 
         let newCount = 0;
-        for (const report of reports) {
+        for (const report of todaysReports) {
             if (existingLinks.has(report.link)) {
+                console.log(`⏭️ Skipping duplicate: ${report.title}`);
                 continue; // Skip existing
             }
 
