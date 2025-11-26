@@ -34,7 +34,7 @@ const virtualConsole = new VirtualConsole();
 virtualConsole.on("error", () => { /* Ignore CSS errors */ });
 
 async function main() {
-    console.log("Script Version: DIGEST MODE (Single Page + Deduplication)"); // Look for this in logs!
+    console.log("Script Version: DIGEST MODE + FAILED FEEDS REPORT"); // Look for this in logs!
 
     try {
         console.log('Fetching feeds from Notion...');
@@ -44,6 +44,7 @@ async function main() {
         console.log(`Found ${feedUrls.length} feeds.`);
 
         const newArticles = [];
+        const failedFeeds = [];
 
         for (const url of feedUrls) {
             let item = null;
@@ -123,15 +124,22 @@ async function main() {
             } catch (e) {
                 const title = item ? item.title : "Unknown";
                 console.error(`Failed to process "${title}": ${e.message}`);
+
+                // Track failed feed if it was a feed error (url is the feed url)
+                if (!item) {
+                    failedFeeds.push({ url: url, error: e.message });
+                }
             }
         }
 
         // 6. Create Digest Page
-        if (newArticles.length > 0) {
-            console.log(`Creating Market Summary with ${newArticles.length} articles...`);
+        if (newArticles.length > 0 || failedFeeds.length > 0) {
+            console.log(`Creating Market Summary with ${newArticles.length} articles and ${failedFeeds.length} failures...`);
 
             // Notion blocks (max 100 per request, simple split if needed, but assuming <100 for now)
             const blocks = [];
+
+            // A. Add Articles
             for (const article of newArticles) {
                 blocks.push({
                     object: 'block',
@@ -160,13 +168,35 @@ async function main() {
                 blocks.push({ object: 'block', type: 'divider', divider: {} });
             }
 
+            // B. Add Failed Feeds Section (if any)
+            if (failedFeeds.length > 0) {
+                blocks.push({
+                    object: 'block',
+                    type: 'heading_2',
+                    heading_2: {
+                        rich_text: [{ type: 'text', text: { content: "⚠️ Failed Feeds" }, annotations: { color: "red" } }]
+                    }
+                });
+                for (const fail of failedFeeds) {
+                    blocks.push({
+                        object: 'block',
+                        type: 'paragraph',
+                        paragraph: {
+                            rich_text: [
+                                { type: 'text', text: { content: `Feed: ${fail.url}\nError: ${fail.error}` } }
+                            ]
+                        }
+                    });
+                }
+            }
+
             // Create the Digest Page
             const now = new Date().toLocaleString('en-US', { timeZone: 'Asia/Ho_Chi_Minh' });
             await notion.pages.create({
                 parent: { database_id: READER_DB_ID },
                 properties: {
                     "Title": { title: [{ type: "text", text: { content: `Market Summary @ ${now}` } }] },
-                    "AI Summary": { rich_text: [{ type: "text", text: { content: `Contains ${newArticles.length} articles.` } }] }
+                    "AI Summary": { rich_text: [{ type: "text", text: { content: `Contains ${newArticles.length} articles. Failed: ${failedFeeds.length}` } }] }
                 },
                 children: blocks.slice(0, 100) // Notion limit: 100 blocks
             });
