@@ -90,7 +90,7 @@ async function fetchFeed(url) {
 }
 
 async function main() {
-    console.log("Script Version: STABILIZED (STRICT PARSER + DEBUG LOGGING + ENOBUFS FIX)");
+    console.log("Script Version: MULTI-ITEM PROCESSING (ITERATING TOP 10 ITEMS)");
 
     try {
         console.log('Fetching feeds from Notion...');
@@ -103,15 +103,13 @@ async function main() {
         const failedFeeds = [];
 
         for (const url of feedUrls) {
-            let item = null;
-
             try {
                 // ROBUST FETCH: Fetch string -> Clean -> Parse
                 const feedData = await fetchFeed(url);
+                let feed;
 
                 try {
-                    const feed = await parser.parseString(feedData);
-                    item = feed.items[0];
+                    feed = await parser.parseString(feedData);
                 } catch (parseError) {
                     // DEBUG LOGGING: Show what failed to parse
                     const snippet = feedData.substring(0, 200).replace(/\n/g, " ");
@@ -120,134 +118,144 @@ async function main() {
                     throw parseError;
                 }
 
-                if (!item || !item.link) continue;
+                if (!feed || !feed.items || feed.items.length === 0) continue;
 
-                // TIME FILTER: Skip items older than RUN_FREQUENCY (in seconds)
-                if (process.env.RUN_FREQUENCY) {
-                    const pubDate = new Date(item.isoDate || item.pubDate);
-                    const timeDiff = (new Date() - pubDate) / 1000; // in seconds
-                    if (timeDiff > parseInt(process.env.RUN_FREQUENCY)) {
-                        console.log(`Skipping old item: ${item.title} (${Math.round(timeDiff / 60)} mins old)`);
-                        continue;
-                    }
-                }
+                // PROCESS TOP 10 ITEMS (Fix for pinned posts or unsorted feeds)
+                const itemsToProcess = feed.items.slice(0, 10);
 
-                console.log(`Checking: ${item.title}`);
+                for (const item of itemsToProcess) {
+                    if (!item.link) continue;
 
-                // 1. Check Duplicates (Log Page Check)
-                const existing = await notion.databases.query({
-                    database_id: READER_DB_ID,
-                    filter: { property: 'Link', url: { equals: item.link } }
-                });
-
-                if (existing.results.length > 0) {
-                    console.log('Skipping existing.');
-                    continue;
-                }
-
-                // 2. Check if we should skip AI Summary
-                const SKIP_DOMAINS = ["substack.com", "f319.com", "cafef.vn/du-lieu/report/"];
-                const shouldSkipAI = SKIP_DOMAINS.some(domain => item.link.includes(domain));
-
-                let safeSummary = "";
-
-                if (shouldSkipAI) {
-                    console.log(`Skipping AI Summary for: ${item.link}`);
-                    safeSummary = "Direct Link (Summary Skipped)";
-                } else {
-                    // 3. Scrape (with Fallback)
-                    let textToRead = "";
-                    try {
-                        console.log(`Scraping: ${item.link}`);
-                        const { data } = await axios.get(item.link, {
-                            timeout: 10000, // Reduced timeout for faster fallback
-                            httpsAgent: httpsAgent,
-                            headers: {
-                                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+                    // TIME FILTER: Skip items older than RUN_FREQUENCY (in seconds)
+                    if (process.env.RUN_FREQUENCY) {
+                        const pubDate = new Date(item.isoDate || item.pubDate);
+                        const timeDiff = (new Date() - pubDate) / 1000; // in seconds
+                        if (timeDiff > parseInt(process.env.RUN_FREQUENCY)) {
+                            // Don't log every skipped item to reduce noise, unless it's the first one
+                            if (itemsToProcess.indexOf(item) === 0) {
+                                console.log(`Skipping old item: ${item.title} (${Math.round(timeDiff / 60)} mins old)`);
                             }
-                        });
-
-                        const doc = new JSDOM(data, { url: item.link, virtualConsole });
-                        const article = new Readability(doc.window.document).parse();
-
-                        if (article && article.textContent.length > 500) {
-                            textToRead = article.textContent.substring(0, 15000);
-                        } else {
-                            throw new Error("Scraped content too short or empty.");
-                        }
-                    } catch (scrapeError) {
-                        console.warn(`Scraping failed for ${item.link}: ${scrapeError.message}. Using RSS content fallback.`);
-
-                        // Fallback to RSS content
-                        const fallbackContent = item.content || item.contentSnippet || "";
-
-                        // Strip HTML if using item.content
-                        if (fallbackContent.includes("<")) {
-                            const dom = new JSDOM(fallbackContent);
-                            textToRead = dom.window.document.body.textContent || "";
-                        } else {
-                            textToRead = fallbackContent;
-                        }
-
-                        if (textToRead.length < 100) {
-                            // If still too short, track as failure
-                            throw new Error(`Content too short even after fallback (${textToRead.length} chars).`);
+                            continue;
                         }
                     }
 
-                    // 4. Summarize
-                    console.log(`Generating AI summary using ${MODEL_NAME}...`);
-                    const model = genAI.getGenerativeModel({
-                        model: MODEL_NAME,
-                        systemInstruction: SYSTEM_PROMPT
+                    console.log(`Checking: ${item.title}`);
+
+                    // 1. Check Duplicates (Log Page Check)
+                    const existing = await notion.databases.query({
+                        database_id: READER_DB_ID,
+                        filter: { property: 'Link', url: { equals: item.link } }
                     });
 
-                    const result = await model.generateContent(textToRead);
-                    const summary = result.response.text();
-                    safeSummary = summary.substring(0, 2000);
-                }
+                    if (existing.results.length > 0) {
+                        console.log('Skipping existing.');
+                        continue;
+                    }
 
-                // 5. Log It / Create Page
-                // If it's a "Skip AI" domain, we create a visible page and DON'T add to digest
-                if (shouldSkipAI) {
+                    // 2. Check if we should skip AI Summary
+                    const SKIP_DOMAINS = ["substack.com", "f319.com", "cafef.vn/du-lieu/report/"];
+                    const shouldSkipAI = SKIP_DOMAINS.some(domain => item.link.includes(domain));
+
+                    let safeSummary = "";
+
+                    if (shouldSkipAI) {
+                        console.log(`Skipping AI Summary for: ${item.link}`);
+                        safeSummary = "Direct Link (Summary Skipped)";
+                    } else {
+                        // 3. Scrape (with Fallback)
+                        let textToRead = "";
+                        try {
+                            console.log(`Scraping: ${item.link}`);
+                            const { data } = await axios.get(item.link, {
+                                timeout: 10000, // Reduced timeout for faster fallback
+                                httpsAgent: httpsAgent,
+                                headers: {
+                                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+                                }
+                            });
+
+                            const doc = new JSDOM(data, { url: item.link, virtualConsole });
+                            const article = new Readability(doc.window.document).parse();
+
+                            if (article && article.textContent.length > 500) {
+                                textToRead = article.textContent.substring(0, 15000);
+                            } else {
+                                throw new Error("Scraped content too short or empty.");
+                            }
+                        } catch (scrapeError) {
+                            console.warn(`Scraping failed for ${item.link}: ${scrapeError.message}. Using RSS content fallback.`);
+
+                            // Fallback to RSS content
+                            const fallbackContent = item.content || item.contentSnippet || "";
+
+                            // Strip HTML if using item.content
+                            if (fallbackContent.includes("<")) {
+                                const dom = new JSDOM(fallbackContent);
+                                textToRead = dom.window.document.body.textContent || "";
+                            } else {
+                                textToRead = fallbackContent;
+                            }
+
+                            if (textToRead.length < 100) {
+                                // If still too short, track as failure
+                                throw new Error(`Content too short even after fallback (${textToRead.length} chars).`);
+                            }
+                        }
+
+                        // 4. Summarize
+                        console.log(`Generating AI summary using ${MODEL_NAME}...`);
+                        const model = genAI.getGenerativeModel({
+                            model: MODEL_NAME,
+                            systemInstruction: SYSTEM_PROMPT
+                        });
+
+                        const result = await model.generateContent(textToRead);
+                        const summary = result.response.text();
+                        safeSummary = summary.substring(0, 2000);
+                    }
+
+                    // 5. Log It / Create Page
+                    // If it's a "Skip AI" domain, we create a visible page and DON'T add to digest
+                    if (shouldSkipAI) {
+                        await notion.pages.create({
+                            parent: { database_id: READER_DB_ID },
+                            properties: {
+                                "Title": { title: [{ type: "text", text: { content: item.title } }] },
+                                "Link": { url: item.link },
+                                "AI Summary": { rich_text: [{ type: "text", text: { content: "Direct Link (No AI Summary)" } }] }
+                            }
+                        });
+                        console.log(`Created Individual Page: ${item.title}`);
+                        // continue; // SKIP adding to Digest (Wait, user might want it in digest?)
+                        // User requested "Skip AI" domains to NOT be in digest, so we continue here.
+                        continue;
+                    }
+
+                    // For normal articles, we create a "Log Entry" (to track duplicates) and add to Digest
                     await notion.pages.create({
                         parent: { database_id: READER_DB_ID },
                         properties: {
                             "Title": { title: [{ type: "text", text: { content: item.title } }] },
                             "Link": { url: item.link },
-                            "AI Summary": { rich_text: [{ type: "text", text: { content: "Direct Link (No AI Summary)" } }] }
+                            "AI Summary": { rich_text: [{ type: "text", text: { content: "Log Entry - Included in Digest" } }] }
                         }
                     });
-                    console.log(`Created Individual Page: ${item.title}`);
-                    continue; // SKIP adding to Digest
+                    console.log(`Logged: ${item.title}`);
+
+                    // 6. Add to Digest List
+                    newArticles.push({
+                        title: item.title,
+                        link: item.link,
+                        summary: safeSummary
+                    });
                 }
-
-                // For normal articles, we create a "Log Entry" (to track duplicates) and add to Digest
-                await notion.pages.create({
-                    parent: { database_id: READER_DB_ID },
-                    properties: {
-                        "Title": { title: [{ type: "text", text: { content: item.title } }] },
-                        "Link": { url: item.link },
-                        "AI Summary": { rich_text: [{ type: "text", text: { content: "Log Entry - Included in Digest" } }] }
-                    }
-                });
-                console.log(`Logged: ${item.title}`);
-
-                // 6. Add to Digest List
-                newArticles.push({
-                    title: item.title,
-                    link: item.link,
-                    summary: safeSummary
-                });
 
             } catch (e) {
-                const title = item ? item.title : "Unknown";
-                console.error(`Failed to process "${title}": ${e.message}`);
+                const title = "Unknown Feed";
+                console.error(`Failed to process feed ${url}: ${e.message}`);
 
-                // Track failed feed if it was a feed error (url is the feed url)
-                if (!item) {
-                    failedFeeds.push({ url: url, error: e.message });
-                }
+                // Track failed feed
+                failedFeeds.push({ url: url, error: e.message });
             }
         }
 
