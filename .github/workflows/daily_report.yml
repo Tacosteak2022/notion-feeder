@@ -2,8 +2,8 @@ name: Daily FinSuccess Report
 
 on:
   schedule:
-    # Run at 8:00 AM Vietnam Time (UTC+7) -> 1:00 AM UTC
-    - cron: '0 1 * * *'
+    # Run every 30 minutes
+    - cron: '*/30 * * * *'
   workflow_dispatch:
 
 jobs:
@@ -22,7 +22,10 @@ jobs:
         run: npm install
 
       - name: Create .env file
-        run: echo "FISC_COOKIE=${{ secrets.FISC_COOKIE }}" > .env
+        run: |
+          echo "FISC_COOKIE=${{ secrets.FISC_COOKIE }}" > .env
+          echo "NOTION_API_KEY=${{ secrets.NOTION_API_KEY }}" >> .env
+          echo "NOTION_DATABASE_ID=${{ secrets.NOTION_DATABASE_ID }}" >> .env
 
       - name: Run Report Fetcher
         run: node fisc_link_extractor.js

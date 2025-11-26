@@ -2,6 +2,7 @@ const axios = require('axios');
 const { JSDOM } = require('jsdom');
 const fs = require('fs');
 const path = require('path');
+const { Client } = require('@notionhq/client');
 
 const REPORT_URL = 'https://fisc.vn/account/report';
 
@@ -31,7 +32,7 @@ function loadEnv() {
                         value = value.slice(1, -1);
                     }
                     process.env[key] = value;
-                    console.log(`Loaded key: ${key}`);
+                    console.log(`Loaded key: ${key} `);
                 }
             });
         } else {
@@ -46,6 +47,8 @@ loadEnv();
 
 async function fetchReportLinks() {
     const cookie = process.env.FISC_COOKIE;
+    const notionKey = process.env.NOTION_API_KEY;
+    const notionDbId = process.env.NOTION_DATABASE_ID;
 
     if (!cookie) {
         console.error('❌ Error: FISC_COOKIE environment variable is not set.');
@@ -54,9 +57,15 @@ async function fetchReportLinks() {
         process.exit(1);
     }
 
+    if (!notionKey || !notionDbId) {
+        console.error('❌ Error: NOTION_API_KEY or NOTION_DATABASE_ID is missing.');
+        console.error('Please ensure NOTION_API_KEY and NOTION_DATABASE_ID are set in your .env file.');
+        process.exit(1);
+    }
+
+    const notion = new Client({ auth: notionKey });
+
     console.log('🔍 Fetching reports from FinSuccess...');
-    console.log(`Cookie length: ${cookie.length}`);
-    console.log(`Cookie start: ${cookie.substring(0, 50)}...`);
 
     try {
         const response = await axios.get(REPORT_URL, {
@@ -80,12 +89,9 @@ async function fetchReportLinks() {
             validateStatus: status => status >= 200 && status < 400
         });
 
-        console.log(`Response Status: ${response.status}`);
-
         // Check for redirect
         if (response.status === 302 || response.status === 301) {
             const location = response.headers.location;
-            console.log(`Redirecting to: ${location}`);
             if (location && location.includes('login')) {
                 console.error('❌ Error: Session cookie is invalid (Redirected to Login).');
                 process.exit(1);
@@ -105,7 +111,7 @@ async function fetchReportLinks() {
         const rows = doc.querySelectorAll('table tbody tr');
 
         if (rows.length === 0) {
-            console.log('⚠️ No reports found in the table. Check if the selector is correct or if there are no reports.');
+            console.log('⚠️ No reports found in the table.');
             return;
         }
 
@@ -127,23 +133,75 @@ async function fetchReportLinks() {
                     link = `https://fisc.vn${link}`;
                 }
 
-                reports.push({
-                    date,
-                    title,
-                    link
-                });
+                reports.push({ date, title, link });
             }
         });
 
-        if (reports.length > 0) {
-            console.log(`\n✅ Found ${reports.length} reports:\n`);
-            reports.forEach(r => {
-                console.log(`📅 ${r.date} | 📄 ${r.title}`);
-                console.log(`🔗 ${r.link}`);
-                console.log('-'.repeat(50));
+        console.log(`✅ Found ${reports.length} reports on FinSuccess.`);
+
+        // --- Notion Sync Logic ---
+        console.log('🔄 Syncing with Notion...');
+
+        // 1. Get existing reports from Notion to avoid duplicates
+        // We assume the "Link" property is unique enough, or we can use Title + Date
+        const existingPages = await notion.databases.query({
+            database_id: notionDbId,
+            page_size: 100, // Check last 100 items
+        });
+
+        const existingLinks = new Set();
+        existingPages.results.forEach(page => {
+            // Check "Link" property (URL type)
+            if (page.properties.Link && page.properties.Link.url) {
+                existingLinks.add(page.properties.Link.url);
+            }
+        });
+
+        let newCount = 0;
+        for (const report of reports) {
+            if (existingLinks.has(report.link)) {
+                continue; // Skip existing
+            }
+
+            console.log(`➕ Adding new report: ${report.title}`);
+
+            // Parse date (DD/MM/YYYY) to ISO (YYYY-MM-DD) for Notion
+            // Assuming input is DD/MM/YYYY
+            let isoDate = null;
+            if (report.date) {
+                const parts = report.date.split('/');
+                if (parts.length === 3) {
+                    isoDate = `${parts[2]}-${parts[1]}-${parts[0]}`;
+                }
+            }
+
+            await notion.pages.create({
+                parent: { database_id: notionDbId },
+                properties: {
+                    "Name": {
+                        title: [
+                            {
+                                text: {
+                                    content: report.title
+                                }
+                            }
+                        ]
+                    },
+                    "Link": {
+                        url: report.link
+                    },
+                    "Date": {
+                        date: isoDate ? { start: isoDate } : null
+                    }
+                }
             });
+            newCount++;
+        }
+
+        if (newCount > 0) {
+            console.log(`🎉 Successfully added ${newCount} new reports to Notion!`);
         } else {
-            console.log('❌ No download links found in the report table.');
+            console.log('👍 No new reports to add.');
         }
 
     } catch (error) {
@@ -155,9 +213,6 @@ async function fetchReportLinks() {
         } else {
             console.error(`❌ Error: ${error.message}`);
         }
-
-        console.log('\n💡 Debug Tip: Try running this cURL command in your terminal to verify your cookie:');
-        console.log(`curl "${REPORT_URL}" -H "Cookie: ${cookie}" -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" -v`);
     }
 }
 
