@@ -146,179 +146,191 @@ async function main() {
                         database_id: READER_DB_ID,
                         filter: { property: 'Link', url: { equals: item.link } }
                     });
-
-                    safeSummary = "Direct Link (Summary Skipped)";
-                } else {
-                    // 3. Scrape (with Fallback)
-                    let textToRead = "";
-                    try {
-                        console.log(`Scraping: ${item.link}`);
-                        const { data } = await axios.get(item.link, {
-                            timeout: 10000, // Reduced timeout for faster fallback
-                            httpsAgent: httpsAgent,
-                            headers: {
-                                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-                            }
-                        });
-
-                        const doc = new JSDOM(data, { url: item.link, virtualConsole });
-                        const article = new Readability(doc.window.document).parse();
-
-                        if (article && article.textContent.length > 500) {
-                            textToRead = article.textContent.substring(0, 15000);
-                        } else {
-                            throw new Error("Scraped content too short or empty.");
-                        }
-                    } catch (scrapeError) {
-                        console.warn(`Scraping failed for ${item.link}: ${scrapeError.message}. Using RSS content fallback.`);
-
-                        // Fallback to RSS content
-                        const fallbackContent = item.content || item.contentSnippet || "";
-
-                        // Strip HTML if using item.content
-                        if (fallbackContent.includes("<")) {
-                            const dom = new JSDOM(fallbackContent);
-                            textToRead = dom.window.document.body.textContent || "";
-                        } else {
-                            textToRead = fallbackContent;
-                        }
-
-                        if (textToRead.length < 100) {
-                            // If still too short, track as failure
-                            throw new Error(`Content too short even after fallback (${textToRead.length} chars).`);
-                        }
+                    if (existing.results.length > 0) {
+                        console.log('Skipping existing.');
+                        continue;
                     }
 
-                    // 4. Summarize
-                    console.log(`Generating AI summary using ${MODEL_NAME}...`);
-                    const model = genAI.getGenerativeModel({
-                        model: MODEL_NAME,
-                        systemInstruction: SYSTEM_PROMPT
-                    });
+                    // 2. Check if we should skip AI Summary
+                    const SKIP_DOMAINS = ["substack.com", "f319.com", "cafef.vn/du-lieu/"];
+                    const shouldSkipAI = SKIP_DOMAINS.some(domain => item.link.includes(domain));
 
-                    const result = await model.generateContent(textToRead);
-                    const summary = result.response.text();
-                    safeSummary = summary.substring(0, 2000);
-                }
+                    let safeSummary = "";
 
-                // 5. Log It / Create Page
-                // If it's a "Skip AI" domain, we create a visible page and DON'T add to digest
-                if (shouldSkipAI) {
+                    if (shouldSkipAI) {
+                        console.log(`Skipping AI Summary for: ${item.link}`);
+                        safeSummary = "Direct Link (Summary Skipped)";
+                    } else {
+                        // 3. Scrape (with Fallback)
+                        let textToRead = "";
+                        try {
+                            console.log(`Scraping: ${item.link}`);
+                            const { data } = await axios.get(item.link, {
+                                timeout: 10000, // Reduced timeout for faster fallback
+                                httpsAgent: httpsAgent,
+                                headers: {
+                                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+                                }
+                            });
+
+                            const doc = new JSDOM(data, { url: item.link, virtualConsole });
+                            const article = new Readability(doc.window.document).parse();
+
+                            if (article && article.textContent.length > 500) {
+                                textToRead = article.textContent.substring(0, 15000);
+                            } else {
+                                throw new Error("Scraped content too short or empty.");
+                            }
+                        } catch (scrapeError) {
+                            console.warn(`Scraping failed for ${item.link}: ${scrapeError.message}. Using RSS content fallback.`);
+
+                            // Fallback to RSS content
+                            const fallbackContent = item.content || item.contentSnippet || "";
+
+                            // Strip HTML if using item.content
+                            if (fallbackContent.includes("<")) {
+                                const dom = new JSDOM(fallbackContent);
+                                textToRead = dom.window.document.body.textContent || "";
+                            } else {
+                                textToRead = fallbackContent;
+                            }
+
+                            if (textToRead.length < 100) {
+                                // If still too short, track as failure
+                                throw new Error(`Content too short even after fallback (${textToRead.length} chars).`);
+                            }
+                        }
+
+                        // 4. Summarize
+                        console.log(`Generating AI summary using ${MODEL_NAME}...`);
+                        const model = genAI.getGenerativeModel({
+                            model: MODEL_NAME,
+                            systemInstruction: SYSTEM_PROMPT
+                        });
+
+                        const result = await model.generateContent(textToRead);
+                        const summary = result.response.text();
+                        safeSummary = summary.substring(0, 2000);
+                    }
+
+                    // 5. Log It / Create Page
+                    // If it's a "Skip AI" domain, we create a visible page and DON'T add to digest
+                    if (shouldSkipAI) {
+                        await notion.pages.create({
+                            parent: { database_id: READER_DB_ID },
+                            properties: {
+                                "Title": { title: [{ type: "text", text: { content: item.title } }] },
+                                "Link": { url: item.link },
+                                "AI Summary": { rich_text: [{ type: "text", text: { content: "Direct Link (No AI Summary)" } }] }
+                            }
+                        });
+                        console.log(`Created Individual Page: ${item.title}`);
+                        // continue; // SKIP adding to Digest (Wait, user might want it in digest?)
+                        // User requested "Skip AI" domains to NOT be in digest, so we continue here.
+                        continue;
+                    }
+
+                    // For normal articles, we create a "Log Entry" (to track duplicates) and add to Digest
                     await notion.pages.create({
                         parent: { database_id: READER_DB_ID },
                         properties: {
                             "Title": { title: [{ type: "text", text: { content: item.title } }] },
                             "Link": { url: item.link },
-                            "AI Summary": { rich_text: [{ type: "text", text: { content: "Direct Link (No AI Summary)" } }] }
+                            "AI Summary": { rich_text: [{ type: "text", text: { content: "Log Entry - Included in Digest" } }] }
                         }
                     });
-                    console.log(`Created Individual Page: ${item.title}`);
-                    // continue; // SKIP adding to Digest (Wait, user might want it in digest?)
-                    // User requested "Skip AI" domains to NOT be in digest, so we continue here.
-                    continue;
+                    console.log(`Logged: ${item.title}`);
+
+                    // 6. Add to Digest List
+                    newArticles.push({
+                        title: item.title,
+                        link: item.link,
+                        summary: safeSummary
+                    });
                 }
 
-                // For normal articles, we create a "Log Entry" (to track duplicates) and add to Digest
-                await notion.pages.create({
-                    parent: { database_id: READER_DB_ID },
-                    properties: {
-                        "Title": { title: [{ type: "text", text: { content: item.title } }] },
-                        "Link": { url: item.link },
-                        "AI Summary": { rich_text: [{ type: "text", text: { content: "Log Entry - Included in Digest" } }] }
-                    }
-                });
-                console.log(`Logged: ${item.title}`);
-
-                // 6. Add to Digest List
-                newArticles.push({
-                    title: item.title,
-                    link: item.link,
-                    summary: safeSummary
-                });
-            }
-
             } catch (e) {
-            const title = "Unknown Feed";
-            console.error(`Failed to process feed ${url}: ${e.message}`);
+                const title = "Unknown Feed";
+                console.error(`Failed to process feed ${url}: ${e.message}`);
 
-            // Track failed feed
-            failedFeeds.push({ url: url, error: e.message });
+                // Track failed feed
+                failedFeeds.push({ url: url, error: e.message });
+            }
         }
-    }
 
         // 7. Create Digest Page
         if (newArticles.length > 0 || failedFeeds.length > 0) {
-        console.log(`Creating Market Summary with ${newArticles.length} articles and ${failedFeeds.length} failures...`);
+            console.log(`Creating Market Summary with ${newArticles.length} articles and ${failedFeeds.length} failures...`);
 
-        // Notion blocks (max 100 per request, simple split if needed, but assuming <100 for now)
-        const blocks = [];
+            // Notion blocks (max 100 per request, simple split if needed, but assuming <100 for now)
+            const blocks = [];
 
-        // A. Add Articles
-        for (const article of newArticles) {
-            blocks.push({
-                object: 'block',
-                type: 'heading_2',
-                heading_2: {
-                    rich_text: [{ type: 'text', text: { content: article.title }, annotations: { bold: true } }]
-                }
-            });
-            blocks.push({
-                object: 'block',
-                type: 'paragraph',
-                paragraph: {
-                    rich_text: [
-                        { type: 'text', text: { content: "Source: " } },
-                        { type: 'text', text: { content: "Link", link: { url: article.link } } }
-                    ]
-                }
-            });
-            blocks.push({
-                object: 'block',
-                type: 'paragraph',
-                paragraph: {
-                    rich_text: [{ type: 'text', text: { content: article.summary } }]
-                }
-            });
-            blocks.push({ object: 'block', type: 'divider', divider: {} });
-        }
-
-        // B. Add Failed Feeds Section (if any)
-        if (failedFeeds.length > 0) {
-            blocks.push({
-                object: 'block',
-                type: 'heading_2',
-                heading_2: {
-                    rich_text: [{ type: 'text', text: { content: "⚠️ Failed Feeds" }, annotations: { color: "red" } }]
-                }
-            });
-            for (const fail of failedFeeds) {
+            // A. Add Articles
+            for (const article of newArticles) {
+                blocks.push({
+                    object: 'block',
+                    type: 'heading_2',
+                    heading_2: {
+                        rich_text: [{ type: 'text', text: { content: article.title }, annotations: { bold: true } }]
+                    }
+                });
                 blocks.push({
                     object: 'block',
                     type: 'paragraph',
                     paragraph: {
                         rich_text: [
-                            { type: 'text', text: { content: `Feed: ${fail.url}\nError: ${fail.error}` } }
+                            { type: 'text', text: { content: "Source: " } },
+                            { type: 'text', text: { content: "Link", link: { url: article.link } } }
                         ]
                     }
                 });
+                blocks.push({
+                    object: 'block',
+                    type: 'paragraph',
+                    paragraph: {
+                        rich_text: [{ type: 'text', text: { content: article.summary } }]
+                    }
+                });
+                blocks.push({ object: 'block', type: 'divider', divider: {} });
             }
-        }
 
-        // Create the Digest Page
-        const now = new Date().toLocaleString('en-US', { timeZone: 'Asia/Ho_Chi_Minh' });
-        await notion.pages.create({
-            parent: { database_id: READER_DB_ID },
-            properties: {
-                "Title": { title: [{ type: "text", text: { content: `Market Summary @ ${now}` } }] },
-                "AI Summary": { rich_text: [{ type: "text", text: { content: `Contains ${newArticles.length} articles. Failed: ${failedFeeds.length}` } }] }
-            },
-            children: blocks.slice(0, 100) // Notion limit: 100 blocks
-        });
-        console.log("Market Summary Created Successfully!");
-    } else {
-        console.log("No new articles to summarize.");
-    }
-} catch (e) { console.error('Critical Main Error:', e.message); }
+            // B. Add Failed Feeds Section (if any)
+            if (failedFeeds.length > 0) {
+                blocks.push({
+                    object: 'block',
+                    type: 'heading_2',
+                    heading_2: {
+                        rich_text: [{ type: 'text', text: { content: "⚠️ Failed Feeds" }, annotations: { color: "red" } }]
+                    }
+                });
+                for (const fail of failedFeeds) {
+                    blocks.push({
+                        object: 'block',
+                        type: 'paragraph',
+                        paragraph: {
+                            rich_text: [
+                                { type: 'text', text: { content: `Feed: ${fail.url}\nError: ${fail.error}` } }
+                            ]
+                        }
+                    });
+                }
+            }
+
+            // Create the Digest Page
+            const now = new Date().toLocaleString('en-US', { timeZone: 'Asia/Ho_Chi_Minh' });
+            await notion.pages.create({
+                parent: { database_id: READER_DB_ID },
+                properties: {
+                    "Title": { title: [{ type: "text", text: { content: `Market Summary @ ${now}` } }] },
+                    "AI Summary": { rich_text: [{ type: "text", text: { content: `Contains ${newArticles.length} articles. Failed: ${failedFeeds.length}` } }] }
+                },
+                children: blocks.slice(0, 100) // Notion limit: 100 blocks
+            });
+            console.log("Market Summary Created Successfully!");
+        } else {
+            console.log("No new articles to summarize.");
+        }
+    } catch (e) { console.error('Critical Main Error:', e.message); }
 }
 
 main();
