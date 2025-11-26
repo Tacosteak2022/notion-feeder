@@ -51,7 +51,13 @@ async function fetchFeed(url) {
                 'Accept': 'application/rss+xml, application/xml, text/xml; q=0.1'
             }
         });
-        return cleanXml(response.data);
+
+        const data = response.data;
+        if (typeof data === 'string' && (data.trim().startsWith("<!DOCTYPE html") || data.includes("<html"))) {
+            throw new Error("Axios returned HTML (likely CAPTCHA/Block page)");
+        }
+
+        return cleanXml(data);
     } catch (axiosError) {
         console.warn(`Axios fetch failed for ${url}: ${axiosError.message}. Trying curl...`);
 
