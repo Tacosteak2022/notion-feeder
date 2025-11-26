@@ -48,7 +48,7 @@ loadEnv();
 async function fetchReportLinks() {
     const cookie = process.env.FISC_COOKIE;
     const notionKey = process.env.NOTION_API_KEY;
-    const notionDbId = process.env.NOTION_DATABASE_ID;
+    const notionDbId = process.env.NOTION_READER_DATABASE_ID;
 
     if (!cookie) {
         console.error('❌ Error: FISC_COOKIE environment variable is not set.');
@@ -58,8 +58,8 @@ async function fetchReportLinks() {
     }
 
     if (!notionKey || !notionDbId) {
-        console.error('❌ Error: NOTION_API_KEY or NOTION_DATABASE_ID is missing.');
-        console.error('Please ensure NOTION_API_KEY and NOTION_DATABASE_ID are set in your .env file.');
+        console.error('❌ Error: NOTION_API_KEY or NOTION_READER_DATABASE_ID is missing.');
+        console.error('Please ensure NOTION_API_KEY and NOTION_READER_DATABASE_ID are set in your .env file.');
         process.exit(1);
     }
 
