@@ -58,7 +58,17 @@ async function main() {
             let item = null;
 
             try {
-                const feed = await parser.parseURL(url);
+                // FETCH FIX: Use axios to get the feed XML first (bypasses 403)
+                const feedResponse = await axios.get(url, {
+                    timeout: 10000,
+                    httpsAgent: httpsAgent,
+                    headers: {
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                        'Accept': 'application/rss+xml, application/xml, text/xml; q=0.1'
+                    }
+                });
+
+                const feed = await parser.parseString(feedResponse.data);
                 item = feed.items[0];
 
                 if (!item || !item.link) continue;
