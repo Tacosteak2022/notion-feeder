@@ -34,7 +34,7 @@ const virtualConsole = new VirtualConsole();
 virtualConsole.on("error", () => { /* Ignore CSS errors */ });
 
 async function main() {
-    console.log("Script Version: DIGEST MODE + FAILED FEEDS REPORT"); // Look for this in logs!
+    console.log("Script Version: DIGEST MODE + FAILED FEEDS + SUBSTACK FIX"); // Look for this in logs!
 
     try {
         console.log('Fetching feeds from Notion...');
@@ -78,19 +78,47 @@ async function main() {
                     continue;
                 }
 
-                // 2. Scrape
-                const { data } = await axios.get(item.link, {
-                    timeout: 15000,
-                    httpsAgent: httpsAgent, // Applies the security fix
-                    headers: {
-                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+                // 2. Scrape (with Fallback)
+                let textToRead = "";
+                try {
+                    console.log(`Scraping: ${item.link}`);
+                    const { data } = await axios.get(item.link, {
+                        timeout: 10000, // Reduced timeout for faster fallback
+                        httpsAgent: httpsAgent,
+                        headers: {
+                            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+                        }
+                    });
+
+                    const doc = new JSDOM(data, { url: item.link, virtualConsole });
+                    const article = new Readability(doc.window.document).parse();
+
+                    if (article && article.textContent.length > 500) {
+                        textToRead = article.textContent.substring(0, 15000);
+                    } else {
+                        throw new Error("Scraped content too short or empty.");
                     }
-                });
+                } catch (scrapeError) {
+                    console.warn(`Scraping failed for ${item.link}: ${scrapeError.message}. Using RSS content fallback.`);
 
-                const doc = new JSDOM(data, { url: item.link, virtualConsole });
-                const article = new Readability(doc.window.document).parse();
+                    // Fallback to RSS content
+                    // item.content is often the full HTML from content:encoded
+                    // item.contentSnippet is the plain text snippet
+                    const fallbackContent = item.content || item.contentSnippet || "";
 
-                const textToRead = article ? article.textContent.substring(0, 15000) : (item.contentSnippet || "");
+                    // Strip HTML if using item.content
+                    if (fallbackContent.includes("<")) {
+                        const dom = new JSDOM(fallbackContent);
+                        textToRead = dom.window.document.body.textContent || "";
+                    } else {
+                        textToRead = fallbackContent;
+                    }
+
+                    if (textToRead.length < 100) {
+                        // If still too short, track as failure
+                        throw new Error(`Content too short even after fallback (${textToRead.length} chars).`);
+                    }
+                }
 
                 // 3. Summarize
                 console.log(`Generating AI summary using ${MODEL_NAME}...`);
