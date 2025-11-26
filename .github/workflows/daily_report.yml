@@ -2,8 +2,8 @@ name: Daily FinSuccess Report
 
 on:
   schedule:
-    # Run every 30 minutes
-    - cron: '*/30 * * * *'
+    # Run every hour
+    - cron: '0 * * * *'
   workflow_dispatch:
 
 jobs:
