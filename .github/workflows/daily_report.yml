@@ -1,0 +1,28 @@
+name: Daily FinSuccess Report
+
+on:
+  schedule:
+    # Run at 8:00 AM Vietnam Time (UTC+7) -> 1:00 AM UTC
+    - cron: '0 1 * * *'
+  workflow_dispatch:
+
+jobs:
+  fetch-reports:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Create .env file
+        run: echo "FISC_COOKIE=${{ secrets.FISC_COOKIE }}" > .env
+
+      - name: Run Report Fetcher
+        run: node fisc_link_extractor.js
