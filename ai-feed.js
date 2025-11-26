@@ -49,29 +49,38 @@ async function fetchFeed(url) {
         return response.data;
     } catch (axiosError) {
         console.warn(`Axios fetch failed for ${url}: ${axiosError.message}. Trying curl...`);
+
         try {
-            // 2. Try Curl (often bypasses 403/TLS issues in CI)
-            // -L follows redirects, -k ignores SSL errors, -sS silences progress but shows errors
-            // Added more headers to mimic a real browser
+            // 2. Try Curl with Browser UA
             const curlCmd = `curl -L -k -sS -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" -H "Accept: application/rss+xml, application/xml, text/xml; q=0.1" "${url}"`;
             const stdout = execSync(curlCmd, { timeout: 15000, encoding: 'utf-8' });
 
-            if (!stdout || stdout.length < 50) throw new Error("Curl returned empty/short response");
-
-            // Check if we got HTML instead of XML (CAPTCHA or Block Page)
-            if (stdout.trim().startsWith("<!DOCTYPE html") || stdout.includes("Just a moment...")) {
-                throw new Error("Curl returned HTML (likely CAPTCHA/Block page) instead of RSS XML");
+            if (stdout && stdout.length > 50 && !stdout.trim().startsWith("<!DOCTYPE html") && !stdout.includes("Just a moment...")) {
+                return stdout;
             }
+            console.warn(`Curl (Browser UA) failed or got HTML. Trying Googlebot...`);
+        } catch (e) { console.warn(`Curl (Browser UA) error: ${e.message}`); }
 
-            return stdout;
+        try {
+            // 3. Try Curl with Googlebot UA (often whitelisted)
+            const curlCmdBot = `curl -L -k -sS -A "Googlebot/2.1 (+http://www.google.com/bot.html)" "${url}"`;
+            const stdoutBot = execSync(curlCmdBot, { timeout: 15000, encoding: 'utf-8' });
+
+            if (!stdoutBot || stdoutBot.length < 50) throw new Error("Curl (Googlebot) returned empty/short response");
+
+            if (stdoutBot.trim().startsWith("<!DOCTYPE html") || stdoutBot.includes("Just a moment...")) {
+                const snippet = stdoutBot.substring(0, 100).replace(/\n/g, " ");
+                throw new Error(`Curl (Googlebot) returned HTML: ${snippet}...`);
+            }
+            return stdoutBot;
         } catch (curlError) {
-            throw new Error(`All fetch methods failed. Axios: ${axiosError.message}, Curl: ${curlError.message}`);
+            throw new Error(`All fetch methods failed. Last error: ${curlError.message}`);
         }
     }
 }
 
 async function main() {
-    console.log("Script Version: DIGEST + FAILED FEEDS + SUBSTACK FIX + SKIP AI + CURL FALLBACK");
+    console.log("Script Version: DIGEST + FAILED FEEDS + SUBSTACK FIX + SKIP AI + CURL FALLBACK + GOOGLEBOT");
 
     try {
         console.log('Fetching feeds from Notion...');
