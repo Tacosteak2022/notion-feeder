@@ -16,6 +16,6 @@
         "@notionhq/client": "^2.2.14",
         "axios": "^1.6.0",
         "jsdom": "^23.0.0",
-        "rss-parser": "^3.13.0"
+        "rss-parser": "3.12.0"
     }
 }
