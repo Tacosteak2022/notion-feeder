@@ -148,7 +148,22 @@ async function main() {
                     safeSummary = summary.substring(0, 2000);
                 }
 
-                // 5. Log It (Create "Log Page" to prevent duplicates)
+                // 5. Log It / Create Page
+                // If it's a "Skip AI" domain, we create a visible page and DON'T add to digest
+                if (shouldSkipAI) {
+                    await notion.pages.create({
+                        parent: { database_id: READER_DB_ID },
+                        properties: {
+                            "Title": { title: [{ type: "text", text: { content: item.title } }] },
+                            "Link": { url: item.link },
+                            "AI Summary": { rich_text: [{ type: "text", text: { content: "Direct Link (No AI Summary)" } }] }
+                        }
+                    });
+                    console.log(`Created Individual Page: ${item.title}`);
+                    continue; // SKIP adding to Digest
+                }
+
+                // For normal articles, we create a "Log Entry" (to track duplicates) and add to Digest
                 await notion.pages.create({
                     parent: { database_id: READER_DB_ID },
                     properties: {
