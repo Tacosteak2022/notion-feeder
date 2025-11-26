@@ -9,7 +9,17 @@ const { execSync } = require('child_process');
 
 // Init Clients
 const notion = new Client({ auth: process.env.NOTION_API_TOKEN });
-const parser = new Parser();
+
+// PARSER FIX: Enable lenient mode for sloppy XML (Reddit, etc.)
+const parser = new Parser({
+    xml2js: {
+        strict: false,
+        trim: true,
+        normalize: true,
+        normalizeTags: true
+    }
+});
+
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 const FEEDS_DB_ID = process.env.NOTION_FEEDS_DATABASE_ID;
@@ -42,7 +52,7 @@ function cleanXml(xml) {
 // Helper to fetch feed with fallback
 async function fetchFeed(url) {
     try {
-        // 1. Try Axios (Standard)
+        // 1. Try Axios (Standard Browser)
         const response = await axios.get(url, {
             timeout: 10000,
             httpsAgent: httpsAgent,
@@ -53,6 +63,7 @@ async function fetchFeed(url) {
         });
 
         const data = response.data;
+        // HTML CHECK: If we got a 200 OK but it's HTML, throw error to trigger fallback
         if (typeof data === 'string' && (data.trim().startsWith("<!DOCTYPE html") || data.includes("<html"))) {
             throw new Error("Axios returned HTML (likely CAPTCHA/Block page)");
         }
@@ -62,16 +73,16 @@ async function fetchFeed(url) {
         console.warn(`Axios fetch failed for ${url}: ${axiosError.message}. Trying curl...`);
 
         try {
-            // 2. Try Curl with Googlebot UA (often whitelisted)
-            const curlCmdBot = `curl -L -k -sS -A "Googlebot/2.1 (+http://www.google.com/bot.html)" "${url}"`;
+            // 2. Try Curl with Bingbot UA (Googlebot is blocked, maybe Bing works?)
+            const curlCmdBot = `curl -L -k -sS -A "Mozilla/5.0 (compatible; Bingbot/2.0; +http://www.bing.com/bingbot.htm)" "${url}"`;
             const stdoutBot = execSync(curlCmdBot, { timeout: 15000, encoding: 'utf-8' });
 
-            if (!stdoutBot || stdoutBot.length < 50) throw new Error("Curl (Googlebot) returned empty/short response");
+            if (!stdoutBot || stdoutBot.length < 50) throw new Error("Curl (Bingbot) returned empty/short response");
 
             // Check for HTML CAPTCHA
             if (stdoutBot.trim().startsWith("<!DOCTYPE html") || stdoutBot.includes("Just a moment...")) {
                 const snippet = stdoutBot.substring(0, 100).replace(/\n/g, " ");
-                throw new Error(`Curl (Googlebot) returned HTML: ${snippet}...`);
+                throw new Error(`Curl (Bingbot) returned HTML: ${snippet}...`);
             }
             return cleanXml(stdoutBot);
         } catch (curlError) {
@@ -81,7 +92,7 @@ async function fetchFeed(url) {
 }
 
 async function main() {
-    console.log("Script Version: ROBUST FETCH RESTORED (AXIOS + CLEANING + CURL FALLBACK)");
+    console.log("Script Version: FINAL ROBUST (LENIENT PARSER + BINGBOT FALLBACK)");
 
     try {
         console.log('Fetching feeds from Notion...');
