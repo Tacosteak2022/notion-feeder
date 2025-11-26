@@ -52,14 +52,21 @@ async function fetchReportLinks() {
 
     if (!cookie) {
         console.error('❌ Error: FISC_COOKIE environment variable is not set.');
-        console.error('Please create a .env file in this directory with your FinSuccess cookie:');
-        console.error('FISC_COOKIE="your_cookie_string_here"');
         process.exit(1);
     }
 
+    if (!notionKey) {
+        console.error('❌ Error: NOTION_API_KEY is missing or empty.');
+    }
+    if (!notionDbId) {
+        console.error('❌ Error: NOTION_READER_DATABASE_ID is missing or empty.');
+    }
+
     if (!notionKey || !notionDbId) {
-        console.error('❌ Error: NOTION_API_KEY or NOTION_READER_DATABASE_ID is missing.');
-        console.error('Please ensure NOTION_API_KEY and NOTION_READER_DATABASE_ID are set in your .env file.');
+        console.error('Debug Info:');
+        console.error(`- NOTION_API_KEY length: ${notionKey ? notionKey.length : 0}`);
+        console.error(`- NOTION_READER_DATABASE_ID length: ${notionDbId ? notionDbId.length : 0}`);
+        console.error('Please check your GitHub Secrets.');
         process.exit(1);
     }
 
