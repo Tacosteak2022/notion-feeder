@@ -10,13 +10,10 @@ const { execSync } = require('child_process');
 // Init Clients
 const notion = new Client({ auth: process.env.NOTION_API_TOKEN });
 
-// PARSER FIX: Enable lenient mode for sloppy XML (Reddit, etc.)
+// REVERT: Use default parser (strict) as 'strict: false' caused regressions
 const parser = new Parser({
-    xml2js: {
-        strict: false,
-        trim: true,
-        normalize: true,
-        normalizeTags: true
+    requestOptions: {
+        rejectUnauthorized: false // Fix for Stockbiz certificate error
     }
 });
 
@@ -74,8 +71,9 @@ async function fetchFeed(url) {
 
         try {
             // 2. Try Curl with Bingbot UA (Googlebot is blocked, maybe Bing works?)
+            // Added maxBuffer to fix ENOBUFS error
             const curlCmdBot = `curl -L -k -sS -A "Mozilla/5.0 (compatible; Bingbot/2.0; +http://www.bing.com/bingbot.htm)" "${url}"`;
-            const stdoutBot = execSync(curlCmdBot, { timeout: 15000, encoding: 'utf-8' });
+            const stdoutBot = execSync(curlCmdBot, { timeout: 15000, encoding: 'utf-8', maxBuffer: 10 * 1024 * 1024 });
 
             if (!stdoutBot || stdoutBot.length < 50) throw new Error("Curl (Bingbot) returned empty/short response");
 
@@ -92,7 +90,7 @@ async function fetchFeed(url) {
 }
 
 async function main() {
-    console.log("Script Version: FINAL ROBUST (LENIENT PARSER + BINGBOT FALLBACK)");
+    console.log("Script Version: STABILIZED (STRICT PARSER + DEBUG LOGGING + ENOBUFS FIX)");
 
     try {
         console.log('Fetching feeds from Notion...');
@@ -110,8 +108,17 @@ async function main() {
             try {
                 // ROBUST FETCH: Fetch string -> Clean -> Parse
                 const feedData = await fetchFeed(url);
-                const feed = await parser.parseString(feedData);
-                item = feed.items[0];
+
+                try {
+                    const feed = await parser.parseString(feedData);
+                    item = feed.items[0];
+                } catch (parseError) {
+                    // DEBUG LOGGING: Show what failed to parse
+                    const snippet = feedData.substring(0, 200).replace(/\n/g, " ");
+                    console.error(`Parse Error for ${url}: ${parseError.message}`);
+                    console.error(`Snippet: ${snippet}...`);
+                    throw parseError;
+                }
 
                 if (!item || !item.link) continue;
 
