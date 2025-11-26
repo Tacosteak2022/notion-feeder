@@ -124,6 +124,92 @@ async function fetchReportLinks() {
 
         const reports = [];
 
+        rows.forEach(row => {
+            const cells = row.querySelectorAll('td');
+            if (cells.length < 2) return;
+
+            const date = cells[0]?.textContent?.trim();
+            const title = cells[1]?.textContent?.trim();
+            const source = cells[2]?.textContent?.trim();
+            const stockCode = cells[3]?.textContent?.trim();
+
+            // Find the "Tải về" (Download) link
+            const downloadBtn = Array.from(row.querySelectorAll('a')).find(a => a.textContent.includes('Tải về'));
+
+            if (downloadBtn) {
+                let link = downloadBtn.getAttribute('href');
+                if (link && !link.startsWith('http')) {
+                    link = `https://fisc.vn${link}`;
+                }
+
+                reports.push({ date, title, source, stockCode, link });
+            }
+        });
+
+        console.log(`✅ Found ${reports.length} reports on FinSuccess.`);
+
+        // --- Notion Sync Logic ---
+        console.log('🔄 Syncing with Notion...');
+
+        // 1. Get existing reports from Notion to avoid duplicates
+        const existingPages = await notion.databases.query({
+            database_id: notionDbId,
+            page_size: 100, // Check last 100 items
+        });
+
+        const existingLinks = new Set();
+        existingPages.results.forEach(page => {
+            if (page.properties.Link && page.properties.Link.url) {
+                existingLinks.add(page.properties.Link.url);
+            }
+        });
+
+        let newCount = 0;
+        for (const report of reports) {
+            if (existingLinks.has(report.link)) {
+                continue; // Skip existing
+            }
+
+            console.log(`➕ Adding new report: ${report.title}`);
+
+            await notion.pages.create({
+                parent: { database_id: notionDbId },
+                properties: {
+                    "Title": {
+                        title: [
+                            {
+                                text: {
+                                    content: report.title
+                                }
+                            }
+                        ]
+                    },
+                    "Link": {
+                        url: report.link
+                    },
+                    "Source": {
+                        rich_text: [
+                            {
+                                text: {
+                                    content: report.source || ""
+                                }
+                            }
+                        ]
+                    },
+                    "Name": {
+                        rich_text: [
+                            {
+                                text: {
+                                    content: report.stockCode || ""
+                                }
+                            }
+                        ]
+                    }
+                }
+            });
+            newCount++;
+        }
+
         if (newCount > 0) {
             console.log(`🎉 Successfully added ${newCount} new reports to Notion!`);
         } else {
