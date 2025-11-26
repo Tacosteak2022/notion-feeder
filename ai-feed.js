@@ -51,10 +51,18 @@ async function fetchFeed(url) {
         console.warn(`Axios fetch failed for ${url}: ${axiosError.message}. Trying curl...`);
         try {
             // 2. Try Curl (often bypasses 403/TLS issues in CI)
-            // -L follows redirects, -k ignores SSL errors
-            const curlCmd = `curl -L -k -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" "${url}"`;
+            // -L follows redirects, -k ignores SSL errors, -sS silences progress but shows errors
+            // Added more headers to mimic a real browser
+            const curlCmd = `curl -L -k -sS -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" -H "Accept: application/rss+xml, application/xml, text/xml; q=0.1" "${url}"`;
             const stdout = execSync(curlCmd, { timeout: 15000, encoding: 'utf-8' });
+
             if (!stdout || stdout.length < 50) throw new Error("Curl returned empty/short response");
+
+            // Check if we got HTML instead of XML (CAPTCHA or Block Page)
+            if (stdout.trim().startsWith("<!DOCTYPE html") || stdout.includes("Just a moment...")) {
+                throw new Error("Curl returned HTML (likely CAPTCHA/Block page) instead of RSS XML");
+            }
+
             return stdout;
         } catch (curlError) {
             throw new Error(`All fetch methods failed. Axios: ${axiosError.message}, Curl: ${curlError.message}`);
