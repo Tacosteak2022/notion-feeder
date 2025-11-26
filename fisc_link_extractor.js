@@ -178,7 +178,7 @@ async function fetchReportLinks() {
             await notion.pages.create({
                 parent: { database_id: notionDbId },
                 properties: {
-                    "Name": {
+                    "Title": {
                         title: [
                             {
                                 text: {
@@ -192,6 +192,15 @@ async function fetchReportLinks() {
                     },
                     "Date": {
                         date: isoDate ? { start: isoDate } : null
+                    },
+                    "AI Summary": {
+                        rich_text: [
+                            {
+                                text: {
+                                    content: "FinSuccess Report - Direct Download"
+                                }
+                            }
+                        ]
                     }
                 }
             });
