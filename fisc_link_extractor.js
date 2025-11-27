@@ -101,6 +101,10 @@ async function fetchReportLinks() {
             const location = response.headers.location;
             if (location && location.includes('login')) {
                 console.error('❌ Error: Session cookie is invalid (Redirected to Login).');
+                console.error('💡 TIP: Your cookie has expired.');
+                console.error('1. Go to fisc.vn, log out, and log in again with "Remember Me" checked.');
+                console.error('2. Copy the new cookie from the Network tab (Request Headers).');
+                console.error('3. Update the FISC_COOKIE secret in your GitHub repository settings.');
                 process.exit(1);
             }
         }
