@@ -133,11 +133,11 @@ async function fetchReportLinks() {
             const source = cells[2]?.textContent?.trim();
             const stockCode = cells[3]?.textContent?.trim();
 
-            // Find the "Tải về" (Download) link
-            const downloadBtn = Array.from(row.querySelectorAll('a')).find(a => a.textContent.includes('Tải về'));
+            // Find the "Xem" (Preview) link instead of "Tải về"
+            const previewBtn = Array.from(row.querySelectorAll('a')).find(a => a.textContent.includes('Xem'));
 
-            if (downloadBtn) {
-                let link = downloadBtn.getAttribute('href');
+            if (previewBtn) {
+                let link = previewBtn.getAttribute('href');
                 if (link && !link.startsWith('http')) {
                     link = `https://fisc.vn${link}`;
                 }
