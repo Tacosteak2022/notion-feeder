@@ -175,18 +175,30 @@ async function fetchReportLinks() {
         const existingPages = await notion.databases.query({
             database_id: notionDbId,
             page_size: 100, // Check last 100 items
+            sorts: [
+                {
+                    timestamp: 'created_time',
+                    direction: 'descending',
+                },
+            ],
         });
 
         const existingLinks = new Set();
+        const existingTitles = new Set();
+
         existingPages.results.forEach(page => {
             if (page.properties.Link && page.properties.Link.url) {
                 existingLinks.add(page.properties.Link.url);
+            }
+            if (page.properties.Title && page.properties.Title.title && page.properties.Title.title.length > 0) {
+                existingTitles.add(page.properties.Title.title[0].plain_text);
             }
         });
 
         let newCount = 0;
         for (const report of todaysReports) {
-            if (existingLinks.has(report.link)) {
+            // Check BOTH Link and Title for duplicates
+            if (existingLinks.has(report.link) || existingTitles.has(report.title)) {
                 console.log(`⏭️ Skipping duplicate: ${report.title}`);
                 continue; // Skip existing
             }
