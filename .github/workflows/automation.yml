@@ -2,7 +2,7 @@ name: Get Feed
 
 on:
   schedule:
-    - cron: '0 * * * *' # Every hour
+    - cron: '0 0,5,14 * * *' # 7AM, 12PM, 9PM VN Time (UTC+7)
   workflow_dispatch:
 
 jobs:
