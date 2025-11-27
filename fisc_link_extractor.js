@@ -55,6 +55,9 @@ async function fetchReportLinks() {
         process.exit(1);
     }
 
+    console.log(`🍪 Debug: Cookie length: ${cookie.length}`);
+    console.log(`🍪 Debug: Cookie starts with: "${cookie.substring(0, 10)}..."`);
+
     if (!notionKey) {
         console.error('❌ Error: NOTION_API_KEY is missing or empty.');
     }
