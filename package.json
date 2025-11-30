@@ -6,15 +6,6 @@
     "main": "ai-feed.js",
     "scripts": {
         "start": "node ai-feed.js"
-```json
-{
-    "name": "notion-ai-feed-reader",
-    "version": "2.2.0",
-    "private": true,
-    "description": "RSS Feed Reader with Gemini AI Summaries",
-    "main": "ai-feed.js",
-    "scripts": {
-        "start": "node ai-feed.js"
     },
     "engines": {
         "node": ">=18.0.0"
@@ -28,4 +19,3 @@
         "rss-parser": "^3.13.0"
     }
 }
-```
