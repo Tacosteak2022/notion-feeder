@@ -61,22 +61,6 @@ async function fetchReportLinks() {
         });
         const page = await browser.newPage();
 
-        // 1. Login
-        console.log('🔑 Logging in...');
-        await page.goto(LOGIN_URL, { waitUntil: 'networkidle0' });
-
-        await page.type('input[name="email"]', email);
-        await page.type('input[name="password"]', password);
-
-        await Promise.all([
-            page.waitForNavigation({ waitUntil: 'networkidle0' }),
-            page.click('button[type="submit"]') // Adjust selector if needed
-        ]);
-
-        // 2. Go to Report Page
-        console.log('🔍 Navigating to reports...');
-        await page.goto(REPORT_URL, { waitUntil: 'networkidle0' });
-
         // 3. Extract Data
         const reports = await page.evaluate(() => {
             const rows = document.querySelectorAll('table tbody tr');
