@@ -1,42 +1,31 @@
-const axios = require('axios');
-const { JSDOM } = require('jsdom');
+const puppeteer = require('puppeteer');
+const { Client } = require('@notionhq/client');
 const fs = require('fs');
 const path = require('path');
-const { Client } = require('@notionhq/client');
 
+const LOGIN_URL = 'https://fisc.vn/account/login';
 const REPORT_URL = 'https://fisc.vn/account/report';
 
-// Manual .env parser since we can't install dotenv
+// Manual .env parser
 function loadEnv() {
     try {
         const envPath = path.join(__dirname, '.env');
-        console.log('Loading .env from:', envPath);
         if (fs.existsSync(envPath)) {
             let content = fs.readFileSync(envPath, 'utf8');
-            // Strip BOM
-            if (content.charCodeAt(0) === 0xFEFF) {
-                content = content.slice(1);
-            }
-
+            if (content.charCodeAt(0) === 0xFEFF) content = content.slice(1);
             content.split('\n').forEach(line => {
                 line = line.trim();
                 if (!line || line.startsWith('#')) return;
-
                 const eqIdx = line.indexOf('=');
                 if (eqIdx > 0) {
                     const key = line.substring(0, eqIdx).trim();
                     let value = line.substring(eqIdx + 1).trim();
-
-                    // Remove quotes if present
                     if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
                         value = value.slice(1, -1);
                     }
                     process.env[key] = value;
-                    console.log(`Loaded key: ${key} `);
                 }
             });
-        } else {
-            console.log('.env file not found');
         }
     } catch (e) {
         console.warn('Could not read .env file:', e.message);
@@ -46,218 +35,126 @@ function loadEnv() {
 loadEnv();
 
 async function fetchReportLinks() {
-    const cookie = process.env.FISC_COOKIE;
+    const email = process.env.FISC_EMAIL;
+    const password = process.env.FISC_PASSWORD;
     const notionKey = process.env.NOTION_API_KEY;
     const notionDbId = process.env.NOTION_READER_DATABASE_ID;
 
-    if (!cookie) {
-        console.error('❌ Error: FISC_COOKIE environment variable is not set.');
+    if (!email || !password) {
+        console.error('❌ Error: FISC_EMAIL or FISC_PASSWORD is not set.');
         process.exit(1);
     }
 
-    console.log(`🍪 Debug: Cookie length: ${cookie.length}`);
-    console.log(`🍪 Debug: Cookie starts with: "${cookie.substring(0, 10)}..."`);
-
-    if (!notionKey) {
-        console.error('❌ Error: NOTION_API_KEY is missing or empty.');
-    }
-    if (!notionDbId) {
-        console.error('❌ Error: NOTION_READER_DATABASE_ID is missing or empty.');
-    }
-
     if (!notionKey || !notionDbId) {
-        console.error('Debug Info:');
-        console.error(`- NOTION_API_KEY length: ${notionKey ? notionKey.length : 0}`);
-        console.error(`- NOTION_READER_DATABASE_ID length: ${notionDbId ? notionDbId.length : 0}`);
-        console.error('Please check your GitHub Secrets.');
+        console.error('❌ Error: Notion secrets are missing.');
         process.exit(1);
     }
 
     const notion = new Client({ auth: notionKey });
-
-    console.log('🔍 Fetching reports from FinSuccess...');
+    let browser;
 
     try {
-        const response = await axios.get(REPORT_URL, {
-            headers: {
-                'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
-                'accept-language': 'en-US,en;q=0.9,vi;q=0.8,en-CA;q=0.7',
-                'priority': 'u=0, i',
-                'referer': 'https://fisc.vn/account',
-                'sec-ch-ua': '"Chromium";v="142", "Microsoft Edge";v="142", "Not_A Brand";v="99"',
-                'sec-ch-ua-mobile': '?0',
-                'sec-ch-ua-platform': '"Windows"',
-                'sec-fetch-dest': 'document',
-                'sec-fetch-mode': 'navigate',
-                'sec-fetch-site': 'same-origin',
-                'sec-fetch-user': '?1',
-                'upgrade-insecure-requests': '1',
-                'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36 Edg/142.0.0.0',
-                'cookie': cookie
-            },
-            maxRedirects: 0,
-            validateStatus: status => status >= 200 && status < 400
+        console.log('🚀 Launching browser...');
+        browser = await puppeteer.launch({
+            headless: "new",
+            args: ['--no-sandbox', '--disable-setuid-sandbox']
         });
+        const page = await browser.newPage();
 
-        // Check for redirect
-        if (response.status === 302 || response.status === 301) {
-            const location = response.headers.location;
-            if (location && location.includes('login')) {
-                console.error('❌ Error: Session cookie is invalid (Redirected to Login).');
-                console.error('💡 TIP: Your cookie has expired.');
-                console.error('1. Go to fisc.vn, log out, and log in again with "Remember Me" checked.');
-                console.error('2. Copy the new cookie from the Network tab (Request Headers).');
-                console.error('3. Update the FISC_COOKIE secret in your GitHub repository settings.');
-                process.exit(1);
-            }
-        }
+        // 1. Login
+        console.log('🔑 Logging in...');
+        await page.goto(LOGIN_URL, { waitUntil: 'networkidle0' });
 
-        // If we got 200 OK but it's the login page content
-        if (response.data.includes('name="email"') && response.data.includes('name="password"')) {
-            console.error('❌ Error: Session cookie is invalid (Login page returned).');
-            process.exit(1);
-        }
+        await page.type('input[name="email"]', email);
+        await page.type('input[name="password"]', password);
 
-        const dom = new JSDOM(response.data);
-        const doc = dom.window.document;
+        await Promise.all([
+            page.waitForNavigation({ waitUntil: 'networkidle0' }),
+            page.click('button[type="submit"]') // Adjust selector if needed
+        ]);
 
-        // Based on typical Bootstrap/HTML tables, we look for <tr> in <tbody>
-        const rows = doc.querySelectorAll('table tbody tr');
+        // 2. Go to Report Page
+        console.log('🔍 Navigating to reports...');
+        await page.goto(REPORT_URL, { waitUntil: 'networkidle0' });
 
-        if (rows.length === 0) {
-            console.log('⚠️ No reports found in the table.');
-            return;
-        }
+        // 3. Extract Data
+        const reports = await page.evaluate(() => {
+            const rows = document.querySelectorAll('table tbody tr');
+            const data = [];
+            rows.forEach(row => {
+                const cells = row.querySelectorAll('td');
+                if (cells.length < 2) return;
 
-        const reports = [];
+                const date = cells[0]?.textContent?.trim();
+                const title = cells[1]?.textContent?.trim();
+                const source = cells[2]?.textContent?.trim();
+                const stockCode = cells[3]?.textContent?.trim();
 
-        rows.forEach(row => {
-            const cells = row.querySelectorAll('td');
-            if (cells.length < 2) return;
-
-            const date = cells[0]?.textContent?.trim();
-            const title = cells[1]?.textContent?.trim();
-            const source = cells[2]?.textContent?.trim();
-            const stockCode = cells[3]?.textContent?.trim();
-
-            // Find the "Xem" (Preview) link instead of "Tải về"
-            const previewBtn = Array.from(row.querySelectorAll('a')).find(a => a.textContent.includes('Xem'));
-
-            if (previewBtn) {
-                let link = previewBtn.getAttribute('href');
-                if (link && !link.startsWith('http')) {
-                    link = `https://fisc.vn${link}`;
+                const previewBtn = Array.from(row.querySelectorAll('a')).find(a => a.textContent.includes('Xem'));
+                if (previewBtn) {
+                    let link = previewBtn.getAttribute('href');
+                    if (link && !link.startsWith('http')) {
+                        link = `https://fisc.vn${link}`;
+                    }
+                    data.push({ date, title, source, stockCode, link });
                 }
-
-                reports.push({ date, title, source, stockCode, link });
-            }
+            });
+            return data;
         });
 
-        console.log(`✅ Found ${reports.length} reports on FinSuccess.`);
+        console.log(`✅ Found ${reports.length} reports.`);
 
-        // --- Date Filtering Logic ---
-        // Get today's date in Vietnam time (DD/MM/YYYY)
+        // 4. Date Filter
         const today = new Date().toLocaleDateString('en-GB', { timeZone: 'Asia/Ho_Chi_Minh' });
-        console.log(`📅 Today's date (Vietnam): ${today}`);
+        console.log(`📅 Today: ${today}`);
 
         const todaysReports = reports.filter(r => r.date === today);
-        console.log(`🎯 Found ${todaysReports.length} reports from today.`);
+        console.log(`🎯 Today's reports: ${todaysReports.length}`);
 
-        if (todaysReports.length === 0) {
-            console.log('😴 No reports from today. Exiting.');
-            return;
-        }
+        if (todaysReports.length === 0) return;
 
-        // --- Notion Sync Logic ---
+        // 5. Notion Sync
         console.log('🔄 Syncing with Notion...');
-
-        // 1. Get existing reports from Notion to avoid duplicates
         const existingPages = await notion.databases.query({
             database_id: notionDbId,
-            page_size: 100, // Check last 100 items
-            sorts: [
-                {
-                    timestamp: 'created_time',
-                    direction: 'descending',
-                },
-            ],
+            page_size: 100,
+            sorts: [{ timestamp: 'created_time', direction: 'descending' }],
         });
 
         const existingLinks = new Set();
         const existingTitles = new Set();
 
         existingPages.results.forEach(page => {
-            if (page.properties.Link && page.properties.Link.url) {
-                existingLinks.add(page.properties.Link.url);
-            }
-            if (page.properties.Title && page.properties.Title.title && page.properties.Title.title.length > 0) {
-                existingTitles.add(page.properties.Title.title[0].plain_text);
-            }
+            if (page.properties.Link?.url) existingLinks.add(page.properties.Link.url);
+            if (page.properties.Title?.title?.[0]?.plain_text) existingTitles.add(page.properties.Title.title[0].plain_text);
         });
 
         let newCount = 0;
         for (const report of todaysReports) {
-            // Check BOTH Link and Title for duplicates
             if (existingLinks.has(report.link) || existingTitles.has(report.title)) {
                 console.log(`⏭️ Skipping duplicate: ${report.title}`);
-                continue; // Skip existing
+                continue;
             }
 
-            console.log(`➕ Adding new report: ${report.title}`);
-
+            console.log(`➕ Adding: ${report.title}`);
             await notion.pages.create({
                 parent: { database_id: notionDbId },
                 properties: {
-                    "Title": {
-                        title: [
-                            {
-                                text: {
-                                    content: report.title
-                                }
-                            }
-                        ]
-                    },
-                    "Link": {
-                        url: report.link
-                    },
-                    "Source": {
-                        rich_text: [
-                            {
-                                text: {
-                                    content: report.source || ""
-                                }
-                            }
-                        ]
-                    },
-                    "Name": {
-                        rich_text: [
-                            {
-                                text: {
-                                    content: report.stockCode || ""
-                                }
-                            }
-                        ]
-                    }
+                    "Title": { title: [{ text: { content: report.title } }] },
+                    "Link": { url: report.link },
+                    "Source": { rich_text: [{ text: { content: report.source || "" } }] },
+                    "Name": { rich_text: [{ text: { content: report.stockCode || "" } }] }
                 }
             });
             newCount++;
         }
-
-        if (newCount > 0) {
-            console.log(`🎉 Successfully added ${newCount} new reports to Notion!`);
-        } else {
-            console.log('👍 No new reports to add.');
-        }
+        console.log(`🎉 Added ${newCount} new reports.`);
 
     } catch (error) {
-        if (error.response) {
-            console.error(`❌ HTTP Error: ${error.response.status} ${error.response.statusText}`);
-            if (error.response.status === 403 || error.response.status === 401) {
-                console.error('Your cookie might be invalid or expired.');
-            }
-        } else {
-            console.error(`❌ Error: ${error.message}`);
-        }
+        console.error('❌ Error:', error.message);
+        process.exit(1);
+    } finally {
+        if (browser) await browser.close();
     }
 }
 

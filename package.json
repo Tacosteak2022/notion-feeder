@@ -6,16 +6,26 @@
     "main": "ai-feed.js",
     "scripts": {
         "start": "node ai-feed.js"
+```json
+{
+    "name": "notion-ai-feed-reader",
+    "version": "2.2.0",
+    "private": true,
+    "description": "RSS Feed Reader with Gemini AI Summaries",
+    "main": "ai-feed.js",
+    "scripts": {
+        "start": "node ai-feed.js"
     },
     "engines": {
         "node": ">=18.0.0"
     },
     "dependencies": {
-        "@google/generative-ai": "^0.21.0",
-        "@mozilla/readability": "^0.5.0",
-        "@notionhq/client": "^2.3.0",
-        "axios": "^1.6.0",
-        "jsdom": "^23.0.0",
+        "@google/generative-ai": "^0.2.1",
+        "@notionhq/client": "^2.2.15",
+        "axios": "^1.7.9",
+        "jsdom": "^25.0.1",
+        "puppeteer": "^23.10.1",
         "rss-parser": "^3.13.0"
     }
 }
+```

@@ -33,7 +33,10 @@ Format strictly: using 3-4 sentences only.
 Extract stock prices, percentages, or figures if any and explain why it matters and the impact on the market.
 
 IMPORTANT: Output the summary in the SAME LANGUAGE as the article. If the article is in Vietnamese, the summary MUST be in Vietnamese.
+<<<<<<< HEAD
 
+=======
+>>>>>>> 2716691 (Retry: Improve deduplication with Title check and Sort)
 `;
 
 // SECURITY FIX: Create an agent that ignores "certificate has expired" errors
