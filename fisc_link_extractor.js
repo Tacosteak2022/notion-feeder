@@ -70,7 +70,15 @@ async function fetchReportLinks() {
 
         // Wait for button to be visible
         const submitSelector = 'button[type="submit"]';
-        await page.waitForSelector(submitSelector, { visible: true, timeout: 5000 });
+        try {
+            await page.waitForSelector(submitSelector, { visible: true, timeout: 30000 });
+        } catch (e) {
+            console.error('❌ Error: Timeout waiting for login button.');
+            await page.screenshot({ path: 'login_error.png' });
+            console.log('📸 Saved screenshot to login_error.png');
+            console.log('📄 Page Content:', await page.content());
+            throw e;
+        }
 
         await Promise.all([
             page.waitForNavigation({ waitUntil: 'networkidle0' }),
