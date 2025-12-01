@@ -1,50 +1,49 @@
-const { google } = require('googleapis');
+const axios = require('axios');
 const { Client } = require('@notionhq/client');
 
 // Configuration
 const SPREADSHEET_ID = process.env.SPREADSHEET_ID;
-const GOOGLE_SERVICE_ACCOUNT_JSON = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
 const NOTION_TOKEN = process.env.NOTION_TOKEN;
 const NOTION_DATABASE_ID = process.env.NOTION_DATABASE_ID;
-const SHEET_RANGE = 'Sheet1!A:B'; // Assumes Column A is Ticker, Column B is Price
 
 async function main() {
-    if (!SPREADSHEET_ID || !GOOGLE_SERVICE_ACCOUNT_JSON || !NOTION_TOKEN || !NOTION_DATABASE_ID) {
+    if (!SPREADSHEET_ID || !NOTION_TOKEN || !NOTION_DATABASE_ID) {
         console.error('Missing required environment variables.');
         process.exit(1);
     }
 
     try {
-        // 1. Fetch data from Google Sheets
-        console.log('Fetching data from Google Sheets...');
-        const auth = new google.auth.GoogleAuth({
-            credentials: JSON.parse(GOOGLE_SERVICE_ACCOUNT_JSON),
-            scopes: ['https://www.googleapis.com/auth/spreadsheets.readonly'],
-        });
+        // 1. Fetch data from Google Sheets CSV
+        console.log('Fetching data from Google Sheets CSV...');
+        const csvUrl = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/export?format=csv`;
+        const response = await axios.get(csvUrl);
+        const csvData = response.data;
 
-        const sheets = google.sheets({ version: 'v4', auth });
-        const response = await sheets.spreadsheets.values.get({
-            spreadsheetId: SPREADSHEET_ID,
-            range: SHEET_RANGE,
-        });
-
-        const rows = response.data.values;
-        if (!rows || rows.length === 0) {
+        if (!csvData) {
             console.log('No data found in Google Sheet.');
             return;
         }
 
-        // 2. Initialize Notion Client
+        // 2. Parse CSV
+        const rows = parseCSV(csvData);
+        if (rows.length === 0) {
+            console.log('No rows found in CSV.');
+            return;
+        }
+
+        // 3. Initialize Notion Client
         const notion = new Client({ auth: NOTION_TOKEN });
 
-        // 3. Process each row
+        // 4. Process each row
         // Assuming Row 1 is header, skipping it if it looks like a header
         const startIndex = (rows[0][0] === 'Ticker' || rows[0][0] === 'Symbol') ? 1 : 0;
 
         for (let i = startIndex; i < rows.length; i++) {
             const row = rows[i];
             const ticker = row[0];
-            const price = parseFloat(row[1]); // Ensure price is a number
+            // Remove any non-numeric characters except dot and minus for price parsing
+            const priceString = row[1] ? row[1].replace(/[^0-9.-]+/g, "") : "0";
+            const price = parseFloat(priceString);
 
             if (!ticker || isNaN(price)) {
                 console.warn(`Skipping invalid row ${i + 1}: ${JSON.stringify(row)}`);
@@ -61,6 +60,15 @@ async function main() {
         console.error('Error during sync:', error);
         process.exit(1);
     }
+}
+
+function parseCSV(csvText) {
+    const lines = csvText.split(/\r?\n/);
+    return lines.map(line => {
+        // Simple CSV split by comma, handling quotes is not robust here but sufficient for simple data
+        // For more complex CSVs, use a library like 'csv-parse'
+        return line.split(',').map(cell => cell.trim());
+    }).filter(row => row.length > 0 && row[0] !== '');
 }
 
 async function updateNotion(notion, ticker, price) {
