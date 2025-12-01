@@ -51,95 +51,66 @@ async function fetchReportLinks() {
     }
 
     const notion = new Client({ auth: notionKey });
-    let browser;
-
-    try {
-        console.log('🚀 Launching browser...');
-        browser = await puppeteer.launch({
-            headless: "new",
-            args: ['--no-sandbox', '--disable-setuid-sandbox']
-        });
-        const page = await browser.newPage();
-
-        // 3. Extract Data
-        const reports = await page.evaluate(() => {
-            const rows = document.querySelectorAll('table tbody tr');
-            const data = [];
-            rows.forEach(row => {
-                const cells = row.querySelectorAll('td');
-                if (cells.length < 2) return;
-
-                const date = cells[0]?.textContent?.trim();
-                const title = cells[1]?.textContent?.trim();
-                const source = cells[2]?.textContent?.trim();
-                const stockCode = cells[3]?.textContent?.trim();
-
-                const previewBtn = Array.from(row.querySelectorAll('a')).find(a => a.textContent.includes('Xem'));
-                if (previewBtn) {
-                    let link = previewBtn.getAttribute('href');
-                    if (link && !link.startsWith('http')) {
-                        link = `https://fisc.vn${link}`;
-                    }
-                    data.push({ date, title, source, stockCode, link });
-                }
+    data.push({ date, title, source, stockCode, link });
+}
             });
-            return data;
+return data;
         });
 
-        console.log(`✅ Found ${reports.length} reports.`);
+console.log(`✅ Found ${reports.length} reports.`);
 
-        // 4. Date Filter
-        const today = new Date().toLocaleDateString('en-GB', { timeZone: 'Asia/Ho_Chi_Minh' });
-        console.log(`📅 Today: ${today}`);
+// 4. Date Filter
+const today = new Date().toLocaleDateString('en-GB', { timeZone: 'Asia/Ho_Chi_Minh' });
+console.log(`📅 Today: ${today}`);
 
-        const todaysReports = reports.filter(r => r.date === today);
-        console.log(`🎯 Today's reports: ${todaysReports.length}`);
+const todaysReports = reports.filter(r => r.date === today);
+console.log(`🎯 Today's reports: ${todaysReports.length}`);
 
-        if (todaysReports.length === 0) return;
+if (todaysReports.length === 0) return;
 
-        // 5. Notion Sync
-        console.log('🔄 Syncing with Notion...');
-        const existingPages = await notion.databases.query({
-            database_id: notionDbId,
-            page_size: 100,
-            sorts: [{ timestamp: 'created_time', direction: 'descending' }],
-        });
+// 5. Notion Sync
+console.log('🔄 Syncing with Notion...');
+const existingPages = await notion.databases.query({
+    database_id: notionDbId,
+    page_size: 100,
+    sorts: [{ timestamp: 'created_time', direction: 'descending' }],
+});
 
-        const existingLinks = new Set();
-        const existingTitles = new Set();
+const existingLinks = new Set();
+const existingTitles = new Set();
 
-        existingPages.results.forEach(page => {
-            if (page.properties.Link?.url) existingLinks.add(page.properties.Link.url);
-            if (page.properties.Title?.title?.[0]?.plain_text) existingTitles.add(page.properties.Title.title[0].plain_text);
-        });
+existingPages.results.forEach(page => {
+    if (page.properties.Link?.url) existingLinks.add(page.properties.Link.url);
+    if (page.properties.Title?.title?.[0]?.plain_text) existingTitles.add(page.properties.Title.title[0].plain_text);
+});
 
-        let newCount = 0;
-        for (const report of todaysReports) {
-            if (existingLinks.has(report.link) || existingTitles.has(report.title)) {
-                console.log(`⏭️ Skipping duplicate: ${report.title}`);
-                continue;
-            }
+let newCount = 0;
+for (const report of todaysReports) {
+    if (existingLinks.has(report.link) || existingTitles.has(report.title)) {
+        console.log(`⏭️ Skipping duplicate: ${report.title}`);
+        continue;
+    }
 
-            console.log(`➕ Adding: ${report.title}`);
-            await notion.pages.create({
-                parent: { database_id: notionDbId },
-                properties: {
-                    "Title": { title: [{ text: { content: report.title } }] },
-                    "Link": { url: report.link },
-                    "Source": { rich_text: [{ text: { content: report.source || "" } }] },
-                    "Name": { rich_text: [{ text: { content: report.stockCode || "" } }] }
-                }
-            });
-            newCount++;
+    console.log(`➕ Adding: ${report.title}`);
+    await notion.pages.create({
+        parent: { database_id: notionDbId },
+        properties: {
+            "Title": { title: [{ text: { content: report.title } }] },
+            "Link": { url: report.link },
+            "Source": { rich_text: [{ text: { content: report.source || "" } }] },
+            "Name": { rich_text: [{ text: { content: report.stockCode || "" } }] }
         }
-        console.log(`🎉 Added ${newCount} new reports.`);
+    });
+    newCount++;
+}
+console.log(`🎉 Added ${newCount} new reports.`);
 
     } catch (error) {
-        console.error('❌ Error:', error.message);
-        process.exit(1);
-    } finally {
-        if (browser) await browser.close();
-    }
+    console.error('❌ Error:', error.message);
+    process.exit(1);
+} finally {
+    if (browser) await browser.close();
+}
 }
 
 fetchReportLinks();
