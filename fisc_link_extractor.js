@@ -69,7 +69,8 @@ async function fetchReportLinks() {
         await page.type('input[name="password"]', password);
 
         // Wait for button to be visible
-        const submitSelector = 'button[type="submit"]';
+        // Note: The button does not have type="submit" explicitly, so we use the class.
+        const submitSelector = 'button.g-recaptcha';
         try {
             await page.waitForSelector(submitSelector, { visible: true, timeout: 30000 });
         } catch (e) {
