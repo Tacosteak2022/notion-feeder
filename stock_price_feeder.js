@@ -90,7 +90,7 @@ async function updateNotion(notion, ticker, price) {
             await notion.pages.update({
                 page_id: pageId,
                 properties: {
-                    'Price': { // Assumes there is a Number property named 'Price'
+                    'Current Price': { // Updated to 'Current Price' per user request
                         number: price,
                     },
                 },
@@ -110,7 +110,7 @@ async function updateNotion(notion, ticker, price) {
                             },
                         ],
                     },
-                    'Price': {
+                    'Current Price': {
                         number: price,
                     },
                 },
