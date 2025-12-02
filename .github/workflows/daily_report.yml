@@ -47,3 +47,10 @@ jobs:
       - name: Run VDSC Link Extractor
         run: node vdsc_link_extractor.js
         continue-on-error: true
+
+      - name: Run SHS Link Extractor
+        run: node shs_link_extractor.js
+        continue-on-error: true
+        env:
+          NOTION_API_KEY: ${{ secrets.NOTION_API_KEY }}
+          NOTION_READER_DATABASE_ID: ${{ secrets.NOTION_READER_DATABASE_ID }}
