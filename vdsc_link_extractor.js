@@ -93,10 +93,21 @@ async function fetchVDSCReports() {
         await page.type('input[type="password"]', password);
 
         // Click Login Button
-        // Find button with text "ĐĂNG NHẬP"
+        // Debug: Log all buttons
+        const buttonTexts = await page.evaluate(() => {
+            return Array.from(document.querySelectorAll('button')).map(b => b.innerText.trim());
+        });
+        console.log('Available buttons:', buttonTexts);
+
+        // Click Login Button
         const loginSuccess = await page.evaluate(() => {
             const buttons = Array.from(document.querySelectorAll('button'));
-            const loginBtn = buttons.find(b => b.innerText.includes('ĐĂNG NHẬP'));
+            // Try exact match or includes with trim
+            const loginBtn = buttons.find(b => {
+                const text = b.innerText.trim().toUpperCase();
+                return text === 'ĐĂNG NHẬP' || text.includes('ĐĂNG NHẬP');
+            });
+
             if (loginBtn) {
                 loginBtn.click();
                 return true;
@@ -105,7 +116,10 @@ async function fetchVDSCReports() {
         });
 
         if (!loginSuccess) {
-            throw new Error('Login button not found');
+            console.log('⚠️ Login button not found by text. Trying Enter key...');
+            await page.focus('input[type="password"]');
+            await page.keyboard.press('Enter');
+            // We assume this submits, but we can't be sure without navigation check
         }
 
         await page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 60000 });
