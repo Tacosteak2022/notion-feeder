@@ -80,6 +80,161 @@ async function fetchVDSCReports() {
         // Wait for password field to ensure form is loaded
         try {
             await page.waitForSelector('input[type="password"]', { timeout: 15000 });
+        } catch (e) {
+            console.error('❌ Error: Login form not found.');
+            await page.screenshot({ path: 'vdsc_login_error.png' });
+            throw e;
+        }
+
+        // Fill form with event triggering and Tabbing
+        const usernameSelector = 'input[placeholder="Tên đăng nhập"], input[name="username"], input[name="email"]';
+        // Focus and type with delay
+        try {
+            await page.focus(usernameSelector);
+            await page.keyboard.type(email, { delay: 100 });
+            await page.keyboard.press('Tab'); // Trigger blur
+
+            await page.focus('input[type="password"]');
+            await page.keyboard.type(password, { delay: 100 });
+            await page.keyboard.press('Tab'); // Trigger blur
+        } catch (typeErr) {
+            console.log('Error typing credentials:', typeErr.message);
+            // Fallback to standard type
+            await page.type(usernameSelector, email);
+            await page.type('input[type="password"]', password);
+        }
+
+        // Trigger input events explicitly
+        await page.evaluate(() => {
+            const inputs = document.querySelectorAll('input');
+            inputs.forEach(input => {
+                input.dispatchEvent(new Event('input', { bubbles: true }));
+                input.dispatchEvent(new Event('change', { bubbles: true }));
+                input.dispatchEvent(new Event('blur', { bubbles: true }));
+            });
+        });
+
+        // Click Login Button
+        const loginBtnSelector = '.login-button';
+        try {
+            // Wait for button to be enabled
+            await page.waitForFunction((selector) => {
+                const btn = document.querySelector(selector);
+                return btn && !btn.disabled;
+            }, { timeout: 5000 }, loginBtnSelector);
+
+            await Promise.all([
+                page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 60000 }),
+                page.click(loginBtnSelector)
+            ]);
+            console.log('Clicked login button.');
+        } catch (e) {
+            console.log('Login button not enabled or click failed, trying Enter key...');
+            try {
+                await page.focus('input[type="password"]');
+                await Promise.all([
+                    page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 60000 }),
+                    page.keyboard.press('Enter')
+                ]);
+                console.log('Pressed Enter key.');
+            } catch (enterErr) {
+                console.log('Enter key navigation timed out or failed.');
+            }
+        }
+
+        // Verify Login
+        const isLoggedIn = await page.evaluate(() => {
+            const loginLink = Array.from(document.querySelectorAll('a')).find(a => a.innerText.includes('Đăng nhập'));
+            return !loginLink;
+        });
+
+        if (!isLoggedIn) {
+            console.error('❌ Error: Login failed. "Đăng nhập" link still visible.');
+            await page.screenshot({ path: 'vdsc_login_failed_check.png' });
+            // Don't exit yet, maybe it's a false negative, but warn loudly
+        } else {
+            console.log('✅ Login verified (Login link gone).');
+        }
+
+        // 2. Scrape Reports
+        const allReports = [];
+        const today = new Date().toLocaleDateString('en-GB', { timeZone: 'Asia/Ho_Chi_Minh' }); // dd/mm/yyyy
+        console.log(`📅 Today: ${today}`);
+
+        for (const url of REPORT_URLS) {
+            console.log(`🔍 Scraping: ${url}`);
+            try {
+                await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
+
+                // Wait for content (table or list)
+                try {
+                    await page.waitForSelector('table tbody tr, .list-news .item, .synthetic .item', { timeout: 10000 });
+                } catch (e) {
+                    console.warn(`⚠️ No content found for ${url}`);
+                    continue;
+                }
+
+                // Extract Data
+                const reports = await page.evaluate(() => {
+                    const data = [];
+                    // Try table format
+                    const rows = document.querySelectorAll('table tbody tr');
+                    if (rows.length > 0) {
+                        rows.forEach(row => {
+                            const cells = row.querySelectorAll('td');
+                            if (cells.length < 2) return;
+                            const date = cells[0]?.innerText?.trim();
+                            const linkEl = row.querySelector('a');
+                            const title = linkEl?.innerText?.trim() || cells[1]?.innerText?.trim();
+                            const link = linkEl?.href;
+
+                            if (date && title && link) {
+                                data.push({ date, title, link, source: 'VDSC' });
+                            }
+                        });
+                    } else {
+                        // Try list format (div.item)
+                        const items = document.querySelectorAll('.list-news .item, .synthetic .item');
+                        items.forEach(item => {
+                            const dateEl = item.querySelector('.publish-date') || item.querySelector('.date');
+                            const titleEl = item.querySelector('.title') || item.querySelector('h4');
+                            const linkEl = item.tagName === 'A' ? item : item.querySelector('a');
+
+                            let date = dateEl?.innerText?.trim();
+                            if (!date) {
+                                const text = item.innerText;
+                                const dateMatch = text.match(/(\d{2}[-/]\d{2}[-/]\d{4})/);
+                                if (dateMatch) date = dateMatch[1];
+                            }
+
+                            const title = titleEl?.innerText?.trim();
+                            const link = linkEl?.href;
+
+                            if (date && title && link) {
+                                data.push({ date, title, link, source: 'VDSC' });
+                            }
+                        });
+                    }
+                    return data;
+                });
+
+                console.log(`   Found ${reports.length} reports.`);
+                if (reports.length > 0) {
+                    console.log(`   First report date: ${reports[0].date}`);
+                }
+
+                // Filter by today
+                const todays = reports.filter(r => {
+                    // Normalize date: replace - with /
+                    const normalizedDate = r.date.replace(/-/g, '/');
+                    return normalizedDate === today;
+                });
+                console.log(`   🎯 Today's: ${todays.length}`);
+                allReports.push(...todays);
+
+            } catch (e) {
+                console.error(`❌ Error scraping ${url}:`, e.message);
+            }
         }
 
         console.log(`✅ Total reports found for today: ${allReports.length}`);
