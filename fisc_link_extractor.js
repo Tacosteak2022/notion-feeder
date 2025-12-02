@@ -92,6 +92,12 @@ async function fetchReportLinks() {
 
         console.log(`📍 Current URL: ${page.url()}`);
 
+        if (page.url().includes('login')) {
+            console.error('❌ Error: Login failed. Still on login page.');
+            await page.screenshot({ path: 'fisc_login_failed.png' });
+            process.exit(1);
+        }
+
         try {
             await page.waitForSelector('table tbody tr', { timeout: 10000 });
         } catch (e) {
