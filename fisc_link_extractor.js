@@ -54,18 +54,6 @@ async function fetchReportLinks() {
     let browser;
 
     try {
-        console.log('🚀 Launching browser...');
-        browser = await puppeteer.launch({
-            headless: "new",
-            args: ['--no-sandbox', '--disable-setuid-sandbox']
-        });
-        const page = await browser.newPage();
-
-        // 1. Login
-        console.log('🔑 Logging in...');
-        await page.goto(LOGIN_URL, { waitUntil: 'networkidle0' });
-
-        await page.type('input[name="email"]', email);
         await page.type('input[name="password"]', password);
 
         // Wait for button to be visible

@@ -80,133 +80,83 @@ async function fetchVDSCReports() {
         // Wait for password field to ensure form is loaded
         try {
             await page.waitForSelector('input[type="password"]', { timeout: 15000 });
-        } catch (e) {
-            console.error('❌ Error: Login form not found.');
-            await page.screenshot({ path: 'vdsc_login_error.png' });
-            throw e;
-        }
+            // Try list format (div.item)
+            const items = document.querySelectorAll('.list-news .item');
+            items.forEach(item => {
+                const dateEl = item.querySelector('.publish-date');
+                const titleEl = item.querySelector('.title');
+                const linkEl = item.tagName === 'A' ? item : item.querySelector('a');
 
-        // Fill form
-        // Try to find username field by placeholder or type
-        const usernameSelector = 'input[placeholder="Tên đăng nhập"], input[name="username"], input[name="email"]';
-        await page.type(usernameSelector, email);
-        await page.type('input[type="password"]', password);
+                const date = dateEl?.innerText?.trim();
+                const title = titleEl?.innerText?.trim();
+                const link = linkEl?.href;
 
-        // Click Login Button
-        // Debug: Log all buttons
-        const allReports = [];
-        const today = new Date().toLocaleDateString('en-GB', { timeZone: 'Asia/Ho_Chi_Minh' }); // dd/mm/yyyy
-        console.log(`📅 Today: ${today}`);
-
-        for (const url of REPORT_URLS) {
-            console.log(`🔍 Scraping: ${url}`);
-            try {
-                await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
-
-                // Wait for content (table or list)
-                try {
-                    await page.waitForSelector('table tbody tr, .list-news .item', { timeout: 10000 });
-                } catch (e) {
-                    console.warn(`⚠️ No content found for ${url}`);
-                    continue;
-                }
-
-                // Extract Data
-                const reports = await page.evaluate(() => {
-                    const data = [];
-                    // Try table format
-                    const rows = document.querySelectorAll('table tbody tr');
-                    if (rows.length > 0) {
-                        rows.forEach(row => {
-                            const cells = row.querySelectorAll('td');
-                            if (cells.length < 2) return;
-                            const date = cells[0]?.innerText?.trim();
-                            const linkEl = row.querySelector('a');
-                            const title = linkEl?.innerText?.trim() || cells[1]?.innerText?.trim();
-                            const link = linkEl?.href;
-
-                            if (date && title && link) {
-                                data.push({ date, title, link, source: 'VDSC' });
-                            }
-                        });
-                    } else {
-                        // Try list format (div.item)
-                        const items = document.querySelectorAll('.list-news .item');
-                        items.forEach(item => {
-                            const dateEl = item.querySelector('.publish-date');
-                            const titleEl = item.querySelector('.title');
-                            const linkEl = item.tagName === 'A' ? item : item.querySelector('a');
-
-                            const date = dateEl?.innerText?.trim();
-                            const title = titleEl?.innerText?.trim();
-                            const link = linkEl?.href;
-
-                            if (date && title && link) {
-                                data.push({ date, title, link, source: 'VDSC' });
-                            }
-                        });
-                    }
-                    return data;
-                });
-
-                console.log(`   Found ${reports.length} reports.`);
-
-                // Filter by today
-                const todays = reports.filter(r => r.date === today);
-                console.log(`   🎯 Today's: ${todays.length}`);
-                allReports.push(...todays);
-
-            } catch (e) {
-                console.error(`❌ Error scraping ${url}:`, e.message);
-            }
-        }
-
-        console.log(`✅ Total reports found for today: ${allReports.length}`);
-        if (allReports.length === 0) return;
-
-        // 3. Notion Sync
-        console.log('🔄 Syncing with Notion...');
-        const existingPages = await notion.databases.query({
-            database_id: notionDbId,
-            page_size: 100,
-            sorts: [{ timestamp: 'created_time', direction: 'descending' }],
-        });
-
-        const existingLinks = new Set();
-        const existingTitles = new Set();
-
-        existingPages.results.forEach(page => {
-            if (page.properties.Link?.url) existingLinks.add(page.properties.Link.url);
-            if (page.properties.Title?.title?.[0]?.plain_text) existingTitles.add(page.properties.Title.title[0].plain_text);
-        });
-
-        let newCount = 0;
-        for (const report of allReports) {
-            if (existingLinks.has(report.link) || existingTitles.has(report.title)) {
-                console.log(`⏭️ Skipping duplicate: ${report.title}`);
-                continue;
-            }
-
-            console.log(`➕ Adding: ${report.title}`);
-            await notion.pages.create({
-                parent: { database_id: notionDbId },
-                properties: {
-                    "Title": { title: [{ text: { content: report.title } }] },
-                    "Link": { url: report.link },
-                    "Source": { rich_text: [{ text: { content: report.source } }] },
-                    "AI Summary": { rich_text: [{ text: { content: "VDSC Report" } }] }
+                if (date && title && link) {
+                    data.push({ date, title, link, source: 'VDSC' });
                 }
             });
-            newCount++;
         }
-        console.log(`🎉 Added ${newCount} new reports.`);
+                    return data;
+    });
+
+    console.log(`   Found ${reports.length} reports.`);
+
+    // Filter by today
+    const todays = reports.filter(r => r.date === today);
+    console.log(`   🎯 Today's: ${todays.length}`);
+    allReports.push(...todays);
+
+} catch (e) {
+    console.error(`❌ Error scraping ${url}:`, e.message);
+}
+        }
+
+console.log(`✅ Total reports found for today: ${allReports.length}`);
+if (allReports.length === 0) return;
+
+// 3. Notion Sync
+console.log('🔄 Syncing with Notion...');
+const existingPages = await notion.databases.query({
+    database_id: notionDbId,
+    page_size: 100,
+    sorts: [{ timestamp: 'created_time', direction: 'descending' }],
+});
+
+const existingLinks = new Set();
+const existingTitles = new Set();
+
+existingPages.results.forEach(page => {
+    if (page.properties.Link?.url) existingLinks.add(page.properties.Link.url);
+    if (page.properties.Title?.title?.[0]?.plain_text) existingTitles.add(page.properties.Title.title[0].plain_text);
+});
+
+let newCount = 0;
+for (const report of allReports) {
+    if (existingLinks.has(report.link) || existingTitles.has(report.title)) {
+        console.log(`⏭️ Skipping duplicate: ${report.title}`);
+        continue;
+    }
+
+    console.log(`➕ Adding: ${report.title}`);
+    await notion.pages.create({
+        parent: { database_id: notionDbId },
+        properties: {
+            "Title": { title: [{ text: { content: report.title } }] },
+            "Link": { url: report.link },
+            "Source": { rich_text: [{ text: { content: report.source } }] },
+            "AI Summary": { rich_text: [{ text: { content: "VDSC Report" } }] }
+        }
+    });
+    newCount++;
+}
+console.log(`🎉 Added ${newCount} new reports.`);
 
     } catch (error) {
-        console.error('❌ Error:', error.message);
-        process.exit(1);
-    } finally {
-        if (browser) await browser.close();
-    }
+    console.error('❌ Error:', error.message);
+    process.exit(1);
+} finally {
+    if (browser) await browser.close();
+}
 }
 
 fetchVDSCReports();
