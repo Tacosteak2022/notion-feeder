@@ -1,6 +1,8 @@
 name: Daily Report Automation
 
 on:
+  push:
+    branches: [ "master" ]
   schedule:
     # Run every hour
     - cron: '0 * * * *'
