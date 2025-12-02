@@ -109,6 +109,12 @@ async function fetchReportLinks() {
         if (page.url().includes('login')) {
             console.error('❌ Error: Login failed. Still on login page.');
             await page.screenshot({ path: 'fisc_login_failed.png' });
+
+            // Dump HTML to see if there's an error message
+            const html = await page.content();
+            console.log('--- Login Page HTML Snippet ---');
+            console.log(html.substring(0, 2000)); // Print first 2000 chars
+
             process.exit(1);
         }
 
