@@ -54,6 +54,32 @@ async function fetchReportLinks() {
     let browser;
 
     try {
+        console.log('🚀 Launching browser...');
+        browser = await puppeteer.launch({
+            headless: "new",
+            args: ['--no-sandbox', '--disable-setuid-sandbox']
+        });
+        const page = await browser.newPage();
+
+        // Stealth mode
+        await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+        await page.setViewport({ width: 1920, height: 1080 });
+        await page.setExtraHTTPHeaders({
+            'Accept-Language': 'en-US,en;q=0.9',
+        });
+
+        // Remove navigator.webdriver
+        await page.evaluateOnNewDocument(() => {
+            Object.defineProperty(navigator, 'webdriver', {
+                get: () => false,
+            });
+        });
+
+        // 1. Login
+        console.log('🔑 Logging in...');
+        await page.goto(LOGIN_URL, { waitUntil: 'networkidle0' });
+
+        await page.type('input[name="email"]', email);
         await page.type('input[name="password"]', password);
 
         // Wait for button to be visible
