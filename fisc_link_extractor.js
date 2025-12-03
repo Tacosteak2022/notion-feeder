@@ -104,6 +104,10 @@ async function fetchReportLinks() {
         const cookies = await page.cookies();
         console.log('🍪 Cookies after login:', cookies.map(c => `${c.name}=${c.value.substring(0, 10)}...`).join(', '));
 
+        // Wait a bit for session to settle
+        console.log('⏳ Waiting 5s for session to settle...');
+        await new Promise(r => setTimeout(r, 5000));
+
         // 2. Go to Report Page
         console.log('🔍 Navigating to reports...');
         await page.goto(REPORT_URL, { waitUntil: 'networkidle0' });
