@@ -56,6 +56,35 @@ async function fetchSHSReports() {
 
         // Stealth mode
         await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+        // Scrape reports
+        console.log(`🔍 Navigating to ${SHS_URL}...`);
+        await page.goto(SHS_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
+
+        const reports = await page.evaluate(() => {
+            const items = document.querySelectorAll('.table-striped tbody tr'); // Adjust selector based on actual page
+            // If table selector fails, try a more generic one or inspect page structure
+            // Based on previous context, SHS might use a table or list. 
+            // Let's assume table for now, but if it fails we might need to debug.
+            // Actually, let's use a robust XPath-like strategy or broad selector
+
+            const data = [];
+            const rows = document.querySelectorAll('tr');
+            rows.forEach(row => {
+                const dateEl = row.querySelector('td:nth-child(1)'); // Assumption
+                const titleEl = row.querySelector('td:nth-child(2) a'); // Assumption
+
+                if (dateEl && titleEl) {
+                    data.push({
+                        date: dateEl.innerText.trim(),
+                        title: titleEl.innerText.trim(),
+                        detailUrl: titleEl.href
+                    });
+                }
+            });
+            return data;
+        });
+
+        console.log(`   Found ${reports.length} reports.`);
         if (reports.length > 0) {
             console.log(`   First report: ${reports[0].date} - ${reports[0].title}`);
         }

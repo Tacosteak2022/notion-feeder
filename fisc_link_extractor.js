@@ -74,33 +74,47 @@ async function fetchReportLinks() {
 
         // Remove navigator.webdriver
 
+        // Cookie Authentication
+        const cookieStr = process.env.FISC_COOKIE;
+        if (cookieStr) {
+            console.log('🍪 Found FISC_COOKIE, attempting session hijack...');
+            try {
+                // Parse cookie string: "name=value; name2=value2"
+                const cookies = cookieStr.split(';').map(c => {
+                    const [name, ...v] = c.trim().split('=');
+                    return {
+                        name: name,
+                        value: v.join('='),
+                        domain: 'fisc.vn',
+                        path: '/',
+                    };
+                });
+                await page.setCookie(...cookies);
+                console.log(`   Set ${cookies.length} cookies.`);
+            } catch (e) {
+                console.error('   ❌ Error setting cookies:', e.message);
+            }
+        } else {
+            console.warn('⚠️ No FISC_COOKIE found. Login will likely fail due to CAPTCHA.');
+        }
+
+        // Navigate to Report Page directly
+        console.log(`Navigating to ${REPORT_URL}...`);
+        await page.goto(REPORT_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
+
         console.log(`📍 Current URL: ${page.url()}`);
 
         if (page.url().includes('login')) {
-            console.error('❌ Error: Login failed. Still on login page.');
-            await page.screenshot({ path: 'fisc_login_failed.png' });
-
-            // Try to find error message
-            const errorText = await page.evaluate(() => {
-                const alerts = document.querySelectorAll('.alert, .error, .text-danger, .invalid-feedback');
-                return Array.from(alerts).map(el => el.innerText).join(' | ');
-            });
-            console.log(`   Page Error Messages: ${errorText || 'None found'}`);
-
-            // Dump HTML to see if there's an error message
-            const html = await page.content();
-            console.log('--- Login Page HTML Snippet ---');
-            console.log(html.substring(0, 10000)); // Print more chars to see body
-
+            console.error('❌ Error: Cookie invalid or expired. Redirected to login page.');
+            // We can't automate login due to CAPTCHA, so just fail here.
             process.exit(1);
         }
 
         try {
             await page.waitForSelector('table tbody tr', { timeout: 10000 });
         } catch (e) {
-            console.error('⚠️ Timeout waiting for table rows. We might not be logged in or the page structure changed.');
-            await page.screenshot({ path: 'debug_error.png' });
-            console.log('📸 Saved screenshot to debug_error.png');
+            console.error('⚠️ Timeout waiting for table rows. Page structure might be different.');
+            await page.screenshot({ path: 'fisc_debug.png' });
         }
 
         // 3. Extract Data
