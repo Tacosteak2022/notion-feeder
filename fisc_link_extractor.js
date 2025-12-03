@@ -82,23 +82,32 @@ async function fetchReportLinks() {
         await page.type('input[name="email"]', email);
         await page.type('input[name="password"]', password);
 
-        // Wait for button to be visible
-        // Note: The button does not have type="submit" explicitly, so we use the class.
-        const submitSelector = 'button.g-recaptcha';
+        // Click "Remember me" if available
         try {
-            await page.waitForSelector(submitSelector, { visible: true, timeout: 30000 });
+            const rememberMe = await page.$('input[type="checkbox"]');
+            if (rememberMe) await rememberMe.click();
         } catch (e) {
-            console.error('❌ Error: Timeout waiting for login button.');
-            await page.screenshot({ path: 'login_error.png' });
-            console.log('📸 Saved screenshot to login_error.png');
-            console.log('📄 Page Content:', await page.content());
-            throw e;
+            console.log('⚠️ Could not click Remember Me checkbox');
         }
 
-        await Promise.all([
-            page.waitForNavigation({ waitUntil: 'networkidle0' }),
-            page.click(submitSelector)
-        ]);
+        // Click Login Button by Text "Đăng nhập"
+        try {
+            await page.evaluate(() => {
+                const buttons = Array.from(document.querySelectorAll('button'));
+                const loginBtn = buttons.find(b => b.innerText.includes('Đăng nhập'));
+                if (loginBtn) {
+                    loginBtn.click();
+                } else {
+                    // Fallback to class
+                    document.querySelector('button.g-recaptcha').click();
+                }
+            });
+            await page.waitForNavigation({ waitUntil: 'networkidle0' });
+        } catch (e) {
+            console.error('❌ Error clicking login button:', e.message);
+            await page.screenshot({ path: 'login_click_error.png' });
+            throw e;
+        }
 
         // Debug: Log cookies
         const cookies = await page.cookies();
