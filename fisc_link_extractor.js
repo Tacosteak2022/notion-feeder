@@ -57,7 +57,11 @@ async function fetchReportLinks() {
         console.log('🚀 Launching browser...');
         browser = await puppeteer.launch({
             headless: "new",
-            args: ['--no-sandbox', '--disable-setuid-sandbox']
+            args: [
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-blink-features=AutomationControlled'
+            ]
         });
         const page = await browser.newPage();
 
@@ -77,6 +81,9 @@ async function fetchReportLinks() {
 
         // 1. Login
         console.log('🔑 Logging in...');
+        console.log(`   Email length: ${email ? email.length : 0}`);
+        console.log(`   Password length: ${password ? password.length : 0}`);
+
         await page.goto(LOGIN_URL, { waitUntil: 'networkidle0' });
 
         await page.type('input[name="email"]', email, { delay: 100 });
@@ -84,40 +91,43 @@ async function fetchReportLinks() {
         await page.type('input[name="password"]', password, { delay: 100 });
         await new Promise(r => setTimeout(r, 500)); // Small pause
 
-        // Wait for button to be visible
-        const submitSelector = 'button[type="submit"], input[type="submit"], .btn-login';
+        // Try submitting via Enter key first (often more reliable)
+        console.log('   Attempting login via Enter key...');
         try {
-            // Try finding by text if selector fails
-            const buttonFound = await page.evaluate(() => {
-                const btns = Array.from(document.querySelectorAll('button, a, input[type="submit"]'));
-                const loginBtn = btns.find(b => b.innerText && (b.innerText.includes('Đăng nhập') || b.innerText.includes('Sign in')));
-                if (loginBtn) {
-                    loginBtn.click();
-                    return true;
-                }
-                return false;
-            });
-
-            if (buttonFound) {
-                console.log('clicked button found by text');
-                await page.waitForNavigation({ waitUntil: 'networkidle0', timeout: 30000 });
-            } else {
-                await page.waitForSelector(submitSelector, { timeout: 5000 });
-                await Promise.all([
-                    page.waitForNavigation({ waitUntil: 'networkidle0', timeout: 30000 }),
-                    page.click(submitSelector)
-                ]);
-            }
+            await Promise.all([
+                page.waitForNavigation({ waitUntil: 'networkidle0', timeout: 30000 }),
+                page.keyboard.press('Enter')
+            ]);
+            console.log('   Enter key navigation complete.');
         } catch (e) {
-            console.log('Click failed or timed out, trying Enter key...');
+            console.log('   Enter key navigation timed out or failed. Trying button click...');
+
+            // Fallback to button click
+            const submitSelector = 'button[type="submit"], input[type="submit"], .btn-login';
             try {
-                await page.focus('input[name="password"]');
-                await Promise.all([
-                    page.waitForNavigation({ waitUntil: 'networkidle0', timeout: 30000 }),
-                    page.keyboard.press('Enter')
-                ]);
-            } catch (enterErr) {
-                console.log('Enter key failed.');
+                // Try finding by text if selector fails
+                const buttonFound = await page.evaluate(() => {
+                    const btns = Array.from(document.querySelectorAll('button, a, input[type="submit"]'));
+                    const loginBtn = btns.find(b => b.innerText && (b.innerText.includes('Đăng nhập') || b.innerText.includes('Sign in')));
+                    if (loginBtn) {
+                        loginBtn.click();
+                        return true;
+                    }
+                    return false;
+                });
+
+                if (buttonFound) {
+                    console.log('   Clicked button found by text');
+                    await page.waitForNavigation({ waitUntil: 'networkidle0', timeout: 30000 });
+                } else {
+                    await page.waitForSelector(submitSelector, { timeout: 5000 });
+                    await Promise.all([
+                        page.waitForNavigation({ waitUntil: 'networkidle0', timeout: 30000 }),
+                        page.click(submitSelector)
+                    ]);
+                }
+            } catch (btnErr) {
+                console.error('   Button click also failed:', btnErr.message);
             }
         }
 
@@ -130,6 +140,13 @@ async function fetchReportLinks() {
         if (page.url().includes('login')) {
             console.error('❌ Error: Login failed. Still on login page.');
             await page.screenshot({ path: 'fisc_login_failed.png' });
+
+            // Try to find error message
+            const errorText = await page.evaluate(() => {
+                const alerts = document.querySelectorAll('.alert, .error, .text-danger, .invalid-feedback');
+                return Array.from(alerts).map(el => el.innerText).join(' | ');
+            });
+            console.log(`   Page Error Messages: ${errorText || 'None found'}`);
 
             // Dump HTML to see if there's an error message
             const html = await page.content();
