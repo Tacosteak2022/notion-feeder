@@ -109,41 +109,6 @@ async function fetchReportLinks() {
 
             // Fallback: Try to login with credentials
             try {
-                await page.waitForSelector('input[name="email"]', { timeout: 5000 });
-
-                console.log('🔑 Filling login form...');
-                await page.type('input[name="email"]', email);
-                await page.type('input[name="password"]', password);
-
-                // Click login button
-                await Promise.all([
-                    page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 60000 }),
-                    page.click('button[type="submit"]')
-                ]);
-
-                console.log('   Login submitted. Checking result...');
-
-                // Check if still on login page (CAPTCHA or error)
-                if (page.url().includes('login')) {
-                    console.error('❌ Error: Credential login failed. Likely due to CAPTCHA or invalid credentials.');
-                    // Try to find error message
-                    const errorText = await page.evaluate(() => {
-                        const alerts = document.querySelectorAll('.alert, .error, .text-danger, .invalid-feedback');
-                        return Array.from(alerts).map(el => el.innerText).join(' | ');
-                    });
-                    console.log(`   Page Error Messages: ${errorText || 'None found'}`);
-                    process.exit(1);
-                } else {
-                    console.log('✅ Credential login successful!');
-                    // Navigate to report page if not already there
-                    if (!page.url().includes('account/report')) {
-                        await page.goto(REPORT_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
-                    }
-                }
-
-            } catch (loginErr) {
-                console.error('❌ Error during credential login fallback:', loginErr.message);
-                process.exit(1);
             }
         }
 
