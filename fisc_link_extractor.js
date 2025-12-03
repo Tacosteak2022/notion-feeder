@@ -100,6 +100,10 @@ async function fetchReportLinks() {
             page.click(submitSelector)
         ]);
 
+        // Debug: Log cookies
+        const cookies = await page.cookies();
+        console.log('🍪 Cookies after login:', cookies.map(c => `${c.name}=${c.value.substring(0, 10)}...`).join(', '));
+
         // 2. Go to Report Page
         console.log('🔍 Navigating to reports...');
         await page.goto(REPORT_URL, { waitUntil: 'networkidle0' });
