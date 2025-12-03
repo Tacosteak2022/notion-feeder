@@ -17,11 +17,22 @@ jobs:
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          echo "RUN_FREQUENCY=86400" >> .env
+      - name: Install dependencies
+        run: npm install
 
-      - name: Run AI Feed Reader
+      - name: Create .env file
+        run: |
+          echo "FISC_EMAIL=${{ secrets.FISC_EMAIL }}" > .env
+          echo "FISC_PASSWORD=${{ secrets.FISC_PASSWORD }}" >> .env
+          echo "FISC_COOKIE=${{ secrets.FISC_COOKIE }}" >> .env
+          echo "VDSC_EMAIL=${{ secrets.VDSC_EMAIL }}" >> .env
+          echo "VDSC_PASSWORD=${{ secrets.VDSC_PASSWORD }}" >> .env
+          echo "NOTION_API_KEY=${{ secrets.NOTION_API_KEY || secrets.NOTION_API_TOKEN }}" >> .env
+          echo "NOTION_API_TOKEN=${{ secrets.NOTION_API_TOKEN || secrets.NOTION_API_KEY }}" >> .env
+          echo "NOTION_READER_DATABASE_ID=${{ secrets.NOTION_READER_DATABASE_ID }}" >> .env
+          echo "NOTION_FEEDS_DATABASE_ID=${{ secrets.NOTION_FEEDS_DATABASE_ID }}" >> .env
+          echo "GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}" >> .env
+          echo "RUN_FREQUENCY=86400" >> .env
         run: node ai-feed.js
         continue-on-error: true
 
