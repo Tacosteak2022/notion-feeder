@@ -67,6 +67,10 @@ async function fetchSHSReports() {
             await page.waitForSelector('a.text-base-content', { timeout: 15000 });
         } catch (e) {
             console.warn('⚠️ No reports found (selector timeout).');
+            await page.screenshot({ path: 'shs_selector_timeout.png' });
+            const html = await page.content();
+            console.log('--- SHS Page HTML Snippet ---');
+            console.log(html.substring(0, 2000));
             return;
         }
 
