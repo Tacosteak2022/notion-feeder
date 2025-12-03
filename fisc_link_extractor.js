@@ -73,67 +73,6 @@ async function fetchReportLinks() {
         });
 
         // Remove navigator.webdriver
-        await page.evaluateOnNewDocument(() => {
-            Object.defineProperty(navigator, 'webdriver', {
-                get: () => false,
-            });
-        });
-
-        // 1. Login
-        console.log('🔑 Logging in...');
-        console.log(`   Email length: ${email ? email.length : 0}`);
-        console.log(`   Password length: ${password ? password.length : 0}`);
-
-        await page.goto(LOGIN_URL, { waitUntil: 'networkidle0' });
-
-        await page.type('input[name="email"]', email, { delay: 100 });
-        await new Promise(r => setTimeout(r, 500)); // Small pause
-        await page.type('input[name="password"]', password, { delay: 100 });
-        await new Promise(r => setTimeout(r, 500)); // Small pause
-
-        // Try submitting via Enter key first (often more reliable)
-        console.log('   Attempting login via Enter key...');
-        try {
-            await Promise.all([
-                page.waitForNavigation({ waitUntil: 'networkidle0', timeout: 30000 }),
-                page.keyboard.press('Enter')
-            ]);
-            console.log('   Enter key navigation complete.');
-        } catch (e) {
-            console.log('   Enter key navigation timed out or failed. Trying button click...');
-
-            // Fallback to button click
-            const submitSelector = 'button[type="submit"], input[type="submit"], .btn-login';
-            try {
-                // Try finding by text if selector fails
-                const buttonFound = await page.evaluate(() => {
-                    const btns = Array.from(document.querySelectorAll('button, a, input[type="submit"]'));
-                    const loginBtn = btns.find(b => b.innerText && (b.innerText.includes('Đăng nhập') || b.innerText.includes('Sign in')));
-                    if (loginBtn) {
-                        loginBtn.click();
-                        return true;
-                    }
-                    return false;
-                });
-
-                if (buttonFound) {
-                    console.log('   Clicked button found by text');
-                    await page.waitForNavigation({ waitUntil: 'networkidle0', timeout: 30000 });
-                } else {
-                    await page.waitForSelector(submitSelector, { timeout: 5000 });
-                    await Promise.all([
-                        page.waitForNavigation({ waitUntil: 'networkidle0', timeout: 30000 }),
-                        page.click(submitSelector)
-                    ]);
-                }
-            } catch (btnErr) {
-                console.error('   Button click also failed:', btnErr.message);
-            }
-        }
-
-        // 2. Go to Report Page
-        console.log('🔍 Navigating to reports...');
-        await page.goto(REPORT_URL, { waitUntil: 'networkidle0' });
 
         console.log(`📍 Current URL: ${page.url()}`);
 
