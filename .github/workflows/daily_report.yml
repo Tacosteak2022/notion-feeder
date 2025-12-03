@@ -33,6 +33,8 @@ jobs:
           echo "NOTION_FEEDS_DATABASE_ID=${{ secrets.NOTION_FEEDS_DATABASE_ID }}" >> .env
           echo "GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}" >> .env
           echo "RUN_FREQUENCY=86400" >> .env
+
+      - name: Run AI Feed Reader
         run: node ai-feed.js
         continue-on-error: true
 
