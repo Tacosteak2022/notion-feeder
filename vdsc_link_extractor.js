@@ -293,8 +293,10 @@ async function fetchVDSCReports() {
                     const today = new Date().toLocaleDateString('en-GB', { timeZone: 'Asia/Ho_Chi_Minh' }); // dd/mm/yyyy
                     console.log(`📅 Today: ${today}`);
 
-                    for (const url of REPORT_URLS) {
-                    }
                 }
+                } catch (e) {
+                console.error(`❌ Error scraping ${url}:`, e.message);
+            }
+        }
 
             fetchVDSCReports();

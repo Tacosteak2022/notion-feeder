@@ -81,95 +81,103 @@ async function fetchSHSReports() {
                     });
                 }
             });
-            return data;
         });
+        return data;
+    });
 
-        console.log(`   Found ${reports.length} reports.`);
-        if (reports.length > 0) {
-            console.log(`   First report: ${reports[0].date} - ${reports[0].title}`);
-        }
-
-        const today = new Date().toLocaleDateString('en-GB', { timeZone: 'Asia/Ho_Chi_Minh' }); // dd/mm/yyyy
-        console.log(`📅 Today: ${today}`);
-
-        const todaysReports = reports.filter(r => r.date === today);
-        console.log(`   🎯 Today's: ${todaysReports.length}`);
-
-        const finalReports = [];
-
-        // Process each report to get the download link
-        for (const report of todaysReports) {
-            console.log(`   Processing: ${report.title}`);
-            try {
-                await page.goto(report.detailUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
-
-                // Find "Xem tài liệu" link
-                const downloadLink = await page.evaluate(() => {
-                    const links = Array.from(document.querySelectorAll('a'));
-                    const docLink = links.find(a => a.innerText.toLowerCase().includes('xem tài liệu') || a.innerText.toLowerCase().includes('tải về'));
-                    return docLink ? docLink.href : null;
-                });
-
-                if (downloadLink) {
-                    console.log(`      🔗 Found document: ${downloadLink}`);
-                    finalReports.push({
-                        title: report.title,
-                        link: downloadLink,
-                        source: 'SHS'
-                    });
-                } else {
-                    console.warn(`      ⚠️ No document link found for ${report.title}`);
-                }
-            } catch (e) {
-                console.error(`      ❌ Error processing detail page: ${e.message}`);
-            }
-        }
-
-        if (finalReports.length === 0) return;
-
-        // Notion Sync
-        console.log('🔄 Syncing with Notion...');
-        const existingPages = await notion.databases.query({
-            database_id: notionDbId,
-            page_size: 100,
-            sorts: [{ timestamp: 'created_time', direction: 'descending' }],
-        });
-
-        const existingLinks = new Set();
-        const existingTitles = new Set();
-
-        existingPages.results.forEach(page => {
-            if (page.properties.Link?.url) existingLinks.add(page.properties.Link.url);
-            if (page.properties.Title?.title?.[0]?.plain_text) existingTitles.add(page.properties.Title.title[0].plain_text);
-        });
-
-        let newCount = 0;
-        for (const report of finalReports) {
-            if (existingLinks.has(report.link) || existingTitles.has(report.title)) {
-                console.log(`⏭️ Skipping duplicate: ${report.title}`);
-                continue;
-            }
-
-            console.log(`➕ Adding: ${report.title}`);
-            await notion.pages.create({
-                parent: { database_id: notionDbId },
-                properties: {
-                    "Title": { title: [{ text: { content: report.title } }] },
-                    "Link": { url: report.link },
-                    "Source": { rich_text: [{ text: { content: report.source } }] },
-                    "AI Summary": { rich_text: [{ text: { content: "SHS Report" } }] }
-                }
-            });
-            newCount++;
-        }
-        console.log(`🎉 Added ${newCount} new reports.`);
-
-    } catch (error) {
-        console.error('❌ Error:', error.message);
-        process.exit(1);
-    } finally {
-        if (browser) await browser.close();
+    if (reports.length === 0) {
+        console.warn('⚠️ No reports found. Dumping page HTML for debugging...');
+        const html = await page.content();
+        console.log(html.substring(0, 20000)); // Dump first 20k chars
+        await page.screenshot({ path: 'shs_debug.png' });
     }
+
+    console.log(`   Found ${reports.length} reports.`);
+    if (reports.length > 0) {
+        console.log(`   First report: ${reports[0].date} - ${reports[0].title}`);
+    }
+
+    const today = new Date().toLocaleDateString('en-GB', { timeZone: 'Asia/Ho_Chi_Minh' }); // dd/mm/yyyy
+    console.log(`📅 Today: ${today}`);
+
+    const todaysReports = reports.filter(r => r.date === today);
+    console.log(`   🎯 Today's: ${todaysReports.length}`);
+
+    const finalReports = [];
+
+    // Process each report to get the download link
+    for (const report of todaysReports) {
+        console.log(`   Processing: ${report.title}`);
+        try {
+            await page.goto(report.detailUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+
+            // Find "Xem tài liệu" link
+            const downloadLink = await page.evaluate(() => {
+                const links = Array.from(document.querySelectorAll('a'));
+                const docLink = links.find(a => a.innerText.toLowerCase().includes('xem tài liệu') || a.innerText.toLowerCase().includes('tải về'));
+                return docLink ? docLink.href : null;
+            });
+
+            if (downloadLink) {
+                console.log(`      🔗 Found document: ${downloadLink}`);
+                finalReports.push({
+                    title: report.title,
+                    link: downloadLink,
+                    source: 'SHS'
+                });
+            } else {
+                console.warn(`      ⚠️ No document link found for ${report.title}`);
+            }
+        } catch (e) {
+            console.error(`      ❌ Error processing detail page: ${e.message}`);
+        }
+    }
+
+    if (finalReports.length === 0) return;
+
+    // Notion Sync
+    console.log('🔄 Syncing with Notion...');
+    const existingPages = await notion.databases.query({
+        database_id: notionDbId,
+        page_size: 100,
+        sorts: [{ timestamp: 'created_time', direction: 'descending' }],
+    });
+
+    const existingLinks = new Set();
+    const existingTitles = new Set();
+
+    existingPages.results.forEach(page => {
+        if (page.properties.Link?.url) existingLinks.add(page.properties.Link.url);
+        if (page.properties.Title?.title?.[0]?.plain_text) existingTitles.add(page.properties.Title.title[0].plain_text);
+    });
+
+    let newCount = 0;
+    for (const report of finalReports) {
+        if (existingLinks.has(report.link) || existingTitles.has(report.title)) {
+            console.log(`⏭️ Skipping duplicate: ${report.title}`);
+            continue;
+        }
+
+        console.log(`➕ Adding: ${report.title}`);
+        await notion.pages.create({
+            parent: { database_id: notionDbId },
+            properties: {
+                "Title": { title: [{ text: { content: report.title } }] },
+                "Link": { url: report.link },
+                "Source": { rich_text: [{ text: { content: report.source } }] },
+                "AI Summary": { rich_text: [{ text: { content: "SHS Report" } }] }
+            }
+        });
+        newCount++;
+    }
+    console.log(`🎉 Added ${newCount} new reports.`);
+
+} catch (error) {
+    console.error('❌ Error:', error.message);
+    process.exit(1);
+} finally {
+    if (browser) await browser.close();
+}
 }
 
 fetchSHSReports();
