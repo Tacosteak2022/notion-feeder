@@ -220,6 +220,10 @@ async function fetchVDSCReports() {
 
                 console.log(`   Found ${reports.length} reports.`);
                 if (reports.length > 0) {
+                    console.log('   Sample Dates:', reports.slice(0, 3).map(r => r.date).join(', '));
+                }
+
+                if (reports.length > 0) {
                     console.log(`   First report date: ${reports[0].date}`);
                 }
 
