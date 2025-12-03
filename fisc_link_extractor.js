@@ -108,6 +108,14 @@ async function fetchReportLinks() {
         console.log('⏳ Waiting 5s for session to settle...');
         await new Promise(r => setTimeout(r, 5000));
 
+        // 1.5 Check Homepage (to validate session)
+        console.log('🏠 Visiting homepage to validate session...');
+        await page.goto('https://fisc.vn/', { waitUntil: 'networkidle0' });
+        const isLoggedInHome = await page.evaluate(() => {
+            return document.body.innerText.includes('Tài khoản') || !document.body.innerText.includes('Đăng nhập');
+        });
+        console.log(`   Logged in on Homepage? ${isLoggedInHome}`);
+
         // 2. Go to Report Page
         console.log('🔍 Navigating to reports...');
         await page.goto(REPORT_URL, { waitUntil: 'networkidle0' });

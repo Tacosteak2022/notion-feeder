@@ -129,16 +129,32 @@ async function fetchVDSCReports() {
             ]);
             console.log('Clicked login button.');
         } catch (e) {
-            console.log('Login button not enabled or click failed, trying Enter key...');
+            console.log('Login button not enabled or click failed, trying direct form submission...');
             try {
-                await page.focus('input[type="password"]');
-                await Promise.all([
-                    page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 60000 }),
-                    page.keyboard.press('Enter')
-                ]);
-                console.log('Pressed Enter key.');
-            } catch (enterErr) {
-                console.log('Enter key navigation timed out or failed.');
+                await page.evaluate(() => {
+                    const form = document.querySelector('form');
+                    if (form) {
+                        form.submit();
+                    } else {
+                        throw new Error('No form found');
+                    }
+                });
+                await page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 60000 });
+                console.log('Submitted form directly.');
+            } catch (submitErr) {
+                console.log('Direct form submission failed:', submitErr.message);
+
+                // Last resort: Enter key
+                try {
+                    await page.focus('input[type="password"]');
+                    await Promise.all([
+                        page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 60000 }),
+                        page.keyboard.press('Enter')
+                    ]);
+                    console.log('Pressed Enter key.');
+                } catch (enterErr) {
+                    console.log('Enter key navigation timed out or failed.');
+                }
             }
         }
 
