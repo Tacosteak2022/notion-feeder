@@ -82,12 +82,20 @@ async function fetchReportLinks() {
         await page.type('input[name="email"]', email);
         await page.type('input[name="password"]', password);
 
-        // Click "Remember me" if available
+        // Click "Remember Me" if available (Robustly)
         try {
-            const rememberMe = await page.$('input[type="checkbox"]');
-            if (rememberMe) await rememberMe.click();
+            const rememberLabel = await page.$('label[for="account"]');
+            if (rememberLabel) {
+                await rememberLabel.click();
+            } else {
+                // Fallback to JS click
+                await page.evaluate(() => {
+                    const cb = document.getElementById('account');
+                    if (cb) cb.click();
+                });
+            }
         } catch (e) {
-            console.log('⚠️ Could not click Remember Me checkbox');
+            console.log('⚠️ Could not click Remember Me checkbox (non-fatal)');
         }
 
         // Click Login Button by Text "Đăng nhập"
@@ -137,6 +145,9 @@ async function fetchReportLinks() {
 
             // Dump HTML to see if there's an error message
             const html = await page.content();
+            if (html.includes('Tài khoản không tồn tại') || html.includes('Mật khẩu không đúng')) {
+                console.error('❌ Reason: Invalid credentials or account does not exist.');
+            }
             console.log('--- Login Page HTML Snippet ---');
             console.log(html.substring(0, 2000)); // Print first 2000 chars
 

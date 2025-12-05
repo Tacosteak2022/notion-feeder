@@ -71,7 +71,15 @@ async function fetchVDSCReports() {
             args: ['--no-sandbox', '--disable-setuid-sandbox']
         });
         const page = await browser.newPage();
+        await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
         await page.setViewport({ width: 1920, height: 1080 });
+
+        // Stealth mode: Hide webdriver
+        await page.evaluateOnNewDocument(() => {
+            Object.defineProperty(navigator, 'webdriver', {
+                get: () => false,
+            });
+        });
 
         // 1. Login
         console.log('🔑 Logging in to VDSC...');
@@ -177,16 +185,53 @@ async function fetchVDSCReports() {
         const today = new Date().toLocaleDateString('en-GB', { timeZone: 'Asia/Ho_Chi_Minh' }); // dd/mm/yyyy
         console.log(`📅 Today: ${today}`);
 
+        // Close initial page to save resources
+        await page.close();
+
         for (const url of REPORT_URLS) {
             console.log(`🔍 Scraping: ${url}`);
+            let page; // Scope page to loop
             try {
+                page = await browser.newPage();
+                await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+                await page.setViewport({ width: 1920, height: 1080 });
+
+                // Stealth mode per page
+                await page.evaluateOnNewDocument(() => {
+                    Object.defineProperty(navigator, 'webdriver', {
+                        get: () => false,
+                    });
+                });
+
+                // Use domcontentloaded for faster initial load, then scroll to trigger lazy loading
                 await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
+
+                // Scroll down to trigger lazy loading
+                await page.evaluate(async () => {
+                    await new Promise((resolve) => {
+                        let totalHeight = 0;
+                        const distance = 100;
+                        const timer = setInterval(() => {
+                            const scrollHeight = document.body.scrollHeight;
+                            window.scrollBy(0, distance);
+                            totalHeight += distance;
+
+                            if (totalHeight >= scrollHeight || totalHeight > 2000) {
+                                clearInterval(timer);
+                                resolve();
+                            }
+                        }, 100);
+                    });
+                });
 
                 // Wait for content (table or list)
                 try {
-                    await page.waitForSelector('table tbody tr, .list-news .item, .synthetic .item', { timeout: 10000 });
+                    await page.waitForSelector('table tbody tr, .list-news .item, .synthetic .item, a.item', { timeout: 30000 });
                 } catch (e) {
                     console.warn(`⚠️ No content found for ${url}`);
+                    const safeUrl = url.replace(/[^a-z0-9]/gi, '_').substring(0, 50);
+                    await page.screenshot({ path: `no_content_${safeUrl}.png` });
+                    await page.close(); // Close page on failure
                     continue;
                 }
 
@@ -208,19 +253,31 @@ async function fetchVDSCReports() {
                                 data.push({ date, title, link, source: 'VDSC' });
                             }
                         });
-                    } else {
-                        // Try list format (div.item)
-                        const items = document.querySelectorAll('.list-news .item, .synthetic .item');
+                    }
+
+                    // Try list/grid format (Type 1: .synthetic .item)
+                    const items = document.querySelectorAll('.list-news .item, .synthetic .item');
+                    if (items.length > 0) {
                         items.forEach(item => {
                             const dateEl = item.querySelector('.publish-date') || item.querySelector('.date');
                             const titleEl = item.querySelector('.title') || item.querySelector('h4');
+                            // For grid items, the item itself is the link (A tag)
                             const linkEl = item.tagName === 'A' ? item : item.querySelector('a');
 
                             let date = dateEl?.innerText?.trim();
                             if (!date) {
+                                // Try finding date in text content (e.g. 02-12-2025 or 02/12/2025)
                                 const text = item.innerText;
                                 const dateMatch = text.match(/(\d{2}[-/]\d{2}[-/]\d{4})/);
-                                if (dateMatch) date = dateMatch[1];
+                                if (dateMatch) {
+                                    date = dateMatch[1];
+                                } else {
+                                    // Try "Tháng" format: 02 Tháng 12 - 2025
+                                    const monthMatch = text.match(/(\d{1,2})\s+Tháng\s+(\d{1,2})\s+-\s+(\d{4})/i);
+                                    if (monthMatch) {
+                                        date = `${monthMatch[1]}/${monthMatch[2]}/${monthMatch[3]}`;
+                                    }
+                                }
                             }
 
                             const title = titleEl?.innerText?.trim();
@@ -231,6 +288,36 @@ async function fetchVDSCReports() {
                             }
                         });
                     }
+
+                    // Try list/grid format (Type 2: Enterprise Reports - a.item)
+                    const enterpriseItems = document.querySelectorAll('a.item');
+                    if (enterpriseItems.length > 0) {
+                        enterpriseItems.forEach(item => {
+                            // Date is split: h2.title (Day) + h4.title (Month - Year)
+                            const dayEl = item.querySelector('h2.title');
+                            const monthYearEl = item.querySelector('h4.title');
+                            const titleEl = item.querySelector('h3');
+                            const link = item.href;
+
+                            let date = null;
+                            if (dayEl && monthYearEl) {
+                                const day = dayEl.innerText.trim();
+                                const monthYearText = monthYearEl.innerText.trim();
+                                // Expected: "tháng 11 - 2025"
+                                const match = monthYearText.match(/tháng\s+(\d{1,2})\s+-\s+(\d{4})/i);
+                                if (match) {
+                                    date = `${day}/${match[1]}/${match[2]}`;
+                                }
+                            }
+
+                            const title = titleEl?.innerText?.trim();
+
+                            if (date && title && link) {
+                                data.push({ date, title, link, source: 'VDSC' });
+                            }
+                        });
+                    }
+
                     return data;
                 });
 
@@ -252,8 +339,11 @@ async function fetchVDSCReports() {
                 console.log(`   🎯 Today's: ${todays.length}`);
                 allReports.push(...todays);
 
+                await page.close(); // Close page after success
+
             } catch (e) {
                 console.error(`❌ Error scraping ${url}:`, e.message);
+                if (page) await page.close();
             }
         }
 
