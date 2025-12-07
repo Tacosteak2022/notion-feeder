@@ -158,7 +158,7 @@ async function main() {
                     }
 
                     // 2. Check if we should skip AI Summary
-                    const SKIP_DOMAINS = ["substack.com", "f319.com", "cafef.vn/du-lieu/"];
+                    const SKIP_DOMAINS = ["substack.com", "f319.com", "cafef.vn/du-lieu/", "bloomberg.com", "wsj.com", "techmeme.com", "nytimes.com", "ft.com"];
                     const shouldSkipAI = SKIP_DOMAINS.some(domain => item.link.includes(domain));
 
                     let safeSummary = "";
@@ -340,4 +340,5 @@ async function main() {
 }
 
 main();
+
 
