@@ -52,17 +52,26 @@ async function fetchReportLinks() {
 
     const notion = new Client({ auth: notionKey });
     let browser;
-    // IMPORTANT: Use the same profile folder as setup script
+
+    // Config based on environment
+    const IS_CI = process.env.CI === 'true';
     const USER_DATA_DIR = path.join(__dirname, 'browser_profile');
 
     try {
-        console.log('🚀 Launching FRESH browser (Persistent Profile)...');
-        browser = await puppeteer.launch({
-            headless: false,
+        console.log(`🚀 Launching browser (CI: ${IS_CI})...`);
+
+        const launchConfig = {
+            headless: IS_CI ? "new" : false, // Headless in CI, Visible Locally
             defaultViewport: null,
-            userDataDir: USER_DATA_DIR,
-            args: ['--start-maximized', '--no-sandbox', '--disable-setuid-sandbox']
-        });
+            args: ['--start-maximized', '--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
+        };
+
+        // Only use persistent profile LOCALLY
+        if (!IS_CI) {
+            launchConfig.userDataDir = USER_DATA_DIR;
+        }
+
+        browser = await puppeteer.launch(launchConfig);
         const page = await browser.newPage();
 
         // Stealth mode
@@ -79,8 +88,23 @@ async function fetchReportLinks() {
             });
         });
 
-        // 1. Check if already logged in (via cookies/profile)
-        console.log('🔑 Checking session from profile...');
+        // 1. Session Setup
+        if (IS_CI) {
+            // CI Mode: Try to load cookies from Env Var
+            console.log('☁️ CI Mode detected. Attempting to load FISC_COOKIES...');
+            if (process.env.FISC_COOKIES) {
+                try {
+                    const cookies = JSON.parse(process.env.FISC_COOKIES);
+                    await page.setCookie(...cookies);
+                    console.log(`   Loaded ${cookies.length} session cookies.`);
+                } catch (e) {
+                    console.error('❌ Error parsing FISC_COOKIES:', e.message);
+                }
+            }
+        }
+
+        // 2. Check Login Status
+        console.log('🔑 Checking login status...');
         await page.goto(LOGIN_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
 
         const isAlreadyLoggedIn = await page.evaluate(() => {
@@ -89,11 +113,25 @@ async function fetchReportLinks() {
         });
 
         if (isAlreadyLoggedIn) {
-            console.log('✅ PROFILE VALID! Already logged in.');
+            console.log('✅ Logged in successfully.');
+            // Save cookies locally for future CI use
+            if (!IS_CI) {
+                const currentCookies = await page.cookies();
+                const cookieFile = path.join(__dirname, 'fisc_cookies_export.json');
+                fs.writeFileSync(cookieFile, JSON.stringify(currentCookies, null, 2));
+                console.log(`💾 Cookies exported to: ${cookieFile}`);
+                console.log('👉 Copy content of fisc_cookies_export.json to GitHub Secret FISC_COOKIES for CI.');
+            }
         } else {
-            console.log('⚠️ Profile not logged in.');
-            console.log('👉 ACTION REQUIRED: Please log in manually in the browser window NOW.');
+            console.log('⚠️ Not logged in.');
 
+            if (IS_CI) {
+                console.error('❌ CI Login Failed: FISC_COOKIES invalid or expired.');
+                console.error('   Please run locally, get fisc_cookies_export.json, and update the GitHub Secret.');
+                process.exit(1);
+            }
+
+            console.log('👉 ACTION REQUIRED: Please log in manually in the browser window NOW.');
             // Wait for login success signal (URL change or button disappearance)
             try {
                 await page.waitForFunction(() => {
@@ -101,6 +139,14 @@ async function fetchReportLinks() {
                         !Array.from(document.querySelectorAll('a')).some(a => a.innerText.includes('Đăng nhập'));
                 }, { timeout: 300000 }); // 5 minutes
                 console.log('✅ Manual login detected!');
+
+                // Save cookies after manual login
+                const currentCookies = await page.cookies();
+                const cookieFile = path.join(__dirname, 'fisc_cookies_export.json');
+                fs.writeFileSync(cookieFile, JSON.stringify(currentCookies, null, 2));
+                console.log(`💾 Cookies exported to: ${cookieFile}`);
+                console.log('👉 Copy content of fisc_cookies_export.json to GitHub Secret FISC_COOKIES for CI.');
+
             } catch (e) {
                 console.error('❌ Login timeout. Exiting.');
                 process.exit(1);
