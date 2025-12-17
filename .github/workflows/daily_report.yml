@@ -41,6 +41,8 @@ jobs:
         continue-on-error: true
 
       - name: Run FinSuccess Report Fetcher
+        env:
+          FISC_COOKIES: ${{ secrets.FISC_COOKIES }}
         run: node fisc_link_extractor.js
         continue-on-error: true
 
