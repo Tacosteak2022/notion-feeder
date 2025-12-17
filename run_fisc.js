@@ -102,17 +102,40 @@ async function fetchReportLinks() {
             }
         }
 
-        // 2. Check Login Status
+        // 2. Check Login Status (STRICT Positive Check)
         console.log('🔑 Checking login status...');
         await page.goto(LOGIN_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
 
+        // Wait a small moment for redirects or WAF
+        await new Promise(r => setTimeout(r, 3000));
+
         const isAlreadyLoggedIn = await page.evaluate(() => {
-            return !document.querySelector('button.g-recaptcha') &&
-                !Array.from(document.querySelectorAll('a')).some(a => a.innerText.includes('Đăng nhập'));
+            const bodyText = document.body.innerText;
+            // Negative check: If we are still on a login form/page
+            const hasLoginInput = !!document.querySelector('input[name="email"]');
+            const hasLoginBtn = !!document.querySelector('button.g-recaptcha');
+
+            // Positive check: Do we see user menu?
+            const hasProfile = bodyText.includes('Tài khoản') || bodyText.includes('Đăng xuất') || bodyText.includes('Account');
+
+            // WAF Check
+            const isWAF = document.title.includes('Just a moment') || document.title.includes('Attention Required');
+
+            if (isWAF) return 'WAF';
+            if (hasLoginInput || hasLoginBtn) return false;
+            if (hasProfile) return true;
+
+            // Ambiguous state (e.g. redirected to home but text weird), default to checking URL
+            return !document.location.href.includes('login');
         });
 
-        if (isAlreadyLoggedIn) {
-            console.log('✅ Logged in successfully.');
+        if (isAlreadyLoggedIn === 'WAF') {
+            console.error('❌ Blocked by Cloudflare/WAF. Cookies might be IP-locked.');
+            if (IS_CI) process.exit(1);
+        }
+
+        if (isAlreadyLoggedIn === true) {
+            console.log('✅ Logged in successfully (Session Valid).');
             // Save cookies locally for future CI use
             if (!IS_CI) {
                 const currentCookies = await page.cookies();
@@ -122,33 +145,69 @@ async function fetchReportLinks() {
                 console.log('👉 Copy content of fisc_cookies_export.json to GitHub Secret FISC_COOKIES for CI.');
             }
         } else {
-            console.log('⚠️ Not logged in.');
+            console.log('⚠️ Not logged in (or Session Invalid).');
 
             if (IS_CI) {
-                console.error('❌ CI Login Failed: FISC_COOKIES invalid or expired.');
-                console.error('   Please run locally, get fisc_cookies_export.json, and update the GitHub Secret.');
-                process.exit(1);
-            }
+                console.log('☁️ CI Mode: Attempting Password Login fallback...');
+                // Original CI login failure logic, now a fallback
+                if (!email || !password) {
+                    console.error('❌ CI Login Failed: FISC_COOKIES invalid or expired, and FISC_EMAIL/FISC_PASSWORD not set.');
+                    console.error('   Please run locally, get fisc_cookies_export.json, and update the GitHub Secret.');
+                    process.exit(1);
+                }
+                console.log('Attempting login with provided credentials...');
+                await page.type('input[name="email"]', email);
+                await page.type('input[name="password"]', password);
+                await page.click('button.g-recaptcha');
+                await page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 60000 });
 
-            console.log('👉 ACTION REQUIRED: Please log in manually in the browser window NOW.');
-            // Wait for login success signal (URL change or button disappearance)
-            try {
-                await page.waitForFunction(() => {
-                    return !document.querySelector('button.g-recaptcha') &&
-                        !Array.from(document.querySelectorAll('a')).some(a => a.innerText.includes('Đăng nhập'));
-                }, { timeout: 300000 }); // 5 minutes
-                console.log('✅ Manual login detected!');
+                const loginSuccessAfterAttempt = await page.evaluate(() => {
+                    const bodyText = document.body.innerText;
+                    const hasLoginInput = !!document.querySelector('input[name="email"]');
+                    const hasLoginBtn = !!document.querySelector('button.g-recaptcha');
+                    const hasProfile = bodyText.includes('Tài khoản') || bodyText.includes('Đăng xuất') || bodyText.includes('Account');
+                    return hasProfile && !(hasLoginInput || hasLoginBtn);
+                });
 
-                // Save cookies after manual login
-                const currentCookies = await page.cookies();
-                const cookieFile = path.join(__dirname, 'fisc_cookies_export.json');
-                fs.writeFileSync(cookieFile, JSON.stringify(currentCookies, null, 2));
-                console.log(`💾 Cookies exported to: ${cookieFile}`);
-                console.log('👉 Copy content of fisc_cookies_export.json to GitHub Secret FISC_COOKIES for CI.');
+                if (loginSuccessAfterAttempt) {
+                    console.log('✅ CI Login with credentials successful.');
+                    const currentCookies = await page.cookies();
+                    const cookieFile = path.join(__dirname, 'fisc_cookies_export.json');
+                    fs.writeFileSync(cookieFile, JSON.stringify(currentCookies, null, 2));
+                    console.log(`💾 Cookies exported to: ${cookieFile}`);
+                    console.log('👉 Copy content of fisc_cookies_export.json to GitHub Secret FISC_COOKIES for CI.');
+                } else {
+                    console.error('❌ CI Login with credentials failed.');
+                    console.error('   Please check FISC_EMAIL/FISC_PASSWORD or update FISC_COOKIES.');
+                    process.exit(1);
+                }
 
-            } catch (e) {
-                console.error('❌ Login timeout. Exiting.');
-                process.exit(1);
+            } else {
+                console.log('👉 ACTION REQUIRED: Please log in manually in the browser window NOW.');
+                // Wait for login success signal (URL change or button disappearance)
+                try {
+                    await page.waitForFunction(() => {
+                        return !document.querySelector('button.g-recaptcha') &&
+                            !Array.from(document.querySelectorAll('a')).some(a => a.innerText.includes('Đăng nhập'));
+                    }, { timeout: 300000 }); // 5 minutes
+                    console.log('✅ Manual login detected!');
+
+                    // Save cookies after manual login
+                    const currentCookies = await page.cookies();
+                    const cookieFile = path.join(__dirname, 'fisc_cookies_export.json');
+                    fs.writeFileSync(cookieFile, JSON.stringify(currentCookies, null, 2));
+                    console.log(`💾 Cookies exported to: ${cookieFile}`);
+                    console.log('👉 Copy content of fisc_cookies_export.json to GitHub Secret FISC_COOKIES for CI.');
+
+                    // Stop here since we just logged in manually
+                    console.log('🔍 Navigating to reports...');
+                    await page.goto(REPORT_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
+                    return; // Skip the password block below
+
+                } catch (e) {
+                    console.error('❌ Login timeout. Exiting.');
+                    process.exit(1);
+                }
             }
         }
 
