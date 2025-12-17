@@ -49,3 +49,11 @@ jobs:
       - name: Run VDSC Link Extractor
         run: node vdsc_link_extractor.js
         continue-on-error: true
+
+      - name: Cleanup Duplicates (Commodities)
+        run: node cleanup_duplicates.js
+        continue-on-error: true
+
+      - name: Cleanup Duplicates (Reports)
+        run: node deduplicate_reports.js
+        continue-on-error: true
