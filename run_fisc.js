@@ -109,7 +109,7 @@ async function fetchReportLinks() {
         // Wait a small moment for redirects or WAF
         await new Promise(r => setTimeout(r, 3000));
 
-        const isAlreadyLoggedIn = await page.evaluate(() => {
+        let loginStatus = await page.evaluate(() => {
             const bodyText = document.body.innerText;
             // Negative check: If we are still on a login form/page
             const hasLoginInput = !!document.querySelector('input[name="email"]');
@@ -129,22 +129,34 @@ async function fetchReportLinks() {
             return !document.location.href.includes('login');
         });
 
-        if (isAlreadyLoggedIn === 'WAF') {
+        if (loginStatus === 'WAF') {
             console.error('❌ Blocked by Cloudflare/WAF. Cookies might be IP-locked.');
             if (IS_CI) process.exit(1);
         }
 
-        if (isAlreadyLoggedIn === true) {
-            console.log('✅ Logged in successfully (Session Valid).');
-            // Save cookies locally for future CI use
-            if (!IS_CI) {
-                const currentCookies = await page.cookies();
-                const cookieFile = path.join(__dirname, 'fisc_cookies_export.json');
-                fs.writeFileSync(cookieFile, JSON.stringify(currentCookies, null, 2));
-                console.log(`💾 Cookies exported to: ${cookieFile}`);
-                console.log('👉 Copy content of fisc_cookies_export.json to GitHub Secret FISC_COOKIES for CI.');
+        // ZOMBIE SESSION CHECK:
+        // Even if homepage says "LoggedIn", we must verify deep access to reports.
+        if (loginStatus === true) {
+            console.log('✅ Homepage indicates logged in. Probing Report URL...');
+            await page.goto(REPORT_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
+
+            if (page.url().includes('login')) {
+                console.warn('⚠️ Report access denied (Redirected to login). Session is invalid/zombie.');
+                loginStatus = false; // Force re-login
+            } else {
+                console.log('✅ Report access confirmed.');
+                // We are already at REPORT_URL, so we can just stay here or continue logic.
+                // Save cookies locally for future CI use
+                if (!IS_CI) {
+                    const currentCookies = await page.cookies();
+                    const cookieFile = path.join(__dirname, 'fisc_cookies_export.json');
+                    fs.writeFileSync(cookieFile, JSON.stringify(currentCookies, null, 2));
+                    console.log(`💾 Cookies exported to: ${cookieFile}`);
+                }
             }
-        } else {
+        }
+
+        if (loginStatus === false) {
             console.log('⚠️ Not logged in (or Session Invalid).');
 
             if (IS_CI) {
@@ -156,8 +168,21 @@ async function fetchReportLinks() {
                     process.exit(1);
                 }
                 console.log('Attempting login with provided credentials...');
+
+                // Ensure we are on login page
+                if (!page.url().includes('login')) {
+                    await page.goto(LOGIN_URL, { waitUntil: 'domcontentloaded' });
+                }
+
                 await page.type('input[name="email"]', email);
                 await page.type('input[name="password"]', password);
+
+                // Click "Remember Me" if available
+                try {
+                    const rememberLabel = await page.$('label[for="account"]');
+                    if (rememberLabel) await rememberLabel.click();
+                } catch (e) { }
+
                 await page.click('button.g-recaptcha');
                 await page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 60000 });
 
@@ -171,11 +196,13 @@ async function fetchReportLinks() {
 
                 if (loginSuccessAfterAttempt) {
                     console.log('✅ CI Login with credentials successful.');
-                    const currentCookies = await page.cookies();
-                    const cookieFile = path.join(__dirname, 'fisc_cookies_export.json');
-                    fs.writeFileSync(cookieFile, JSON.stringify(currentCookies, null, 2));
-                    console.log(`💾 Cookies exported to: ${cookieFile}`);
-                    console.log('👉 Copy content of fisc_cookies_export.json to GitHub Secret FISC_COOKIES for CI.');
+                    // Save cookies only if local (CI doesn't need to save to disk usually, but good for debug)
+                    if (!IS_CI) {
+                        const currentCookies = await page.cookies();
+                        const cookieFile = path.join(__dirname, 'fisc_cookies_export.json');
+                        fs.writeFileSync(cookieFile, JSON.stringify(currentCookies, null, 2));
+                        console.log(`💾 Cookies exported to: ${cookieFile}`);
+                    }
                 } else {
                     console.error('❌ CI Login with credentials failed.');
                     console.error('   Please check FISC_EMAIL/FISC_PASSWORD or update FISC_COOKIES.');
@@ -202,7 +229,7 @@ async function fetchReportLinks() {
                     // Stop here since we just logged in manually
                     console.log('🔍 Navigating to reports...');
                     await page.goto(REPORT_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
-                    return; // Skip the password block below
+                    // return; // Don't return, flow continues below
 
                 } catch (e) {
                     console.error('❌ Login timeout. Exiting.');
@@ -211,8 +238,11 @@ async function fetchReportLinks() {
             }
         }
 
-        console.log('🔍 Navigating to reports...');
-        await page.goto(REPORT_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
+        // Ensure we are at report URL (if we logged in via credentials, we might be at home)
+        if (!page.url().includes('report')) {
+            console.log('🔍 Navigating to reports...');
+            await page.goto(REPORT_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
+        }
 
         console.log(`📍 Current URL: ${page.url()}`);
         if (page.url().includes('login')) {
