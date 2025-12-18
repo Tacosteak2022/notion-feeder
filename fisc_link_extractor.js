@@ -74,9 +74,10 @@ async function fetchReportLinks() {
         browser = await puppeteer.launch(launchConfig);
         const page = await browser.newPage();
 
-        // Stealth mode
+        // 1. Set Realistic User Agent (Avoid HeadlessChrome detection)
         await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
-        await page.setViewport({ width: 1920, height: 1080 });
+
+        await page.setViewport({ width: 1280, height: 800 });
         await page.setExtraHTTPHeaders({
             'Accept-Language': 'en-US,en;q=0.9',
         });
@@ -143,6 +144,17 @@ async function fetchReportLinks() {
 
             if (page.url().includes('login')) {
                 console.warn('⚠️ Report access denied (Redirected to login). Session is invalid/zombie.');
+                console.warn(`   Specific URL: ${page.url()}`);
+
+                // Debug Screenshot for Redirect
+                const redirectShot = path.join(__dirname, 'redirect_fail.png');
+                await page.screenshot({ path: redirectShot });
+                console.error(`   📸 Screenshot saved to ${redirectShot} (Artifact)`);
+
+                const redirectHtml = await page.content();
+                const redirectHtmlPath = path.join(__dirname, 'redirect_fail.html');
+                fs.writeFileSync(redirectHtmlPath, redirectHtml);
+
                 loginStatus = false; // Force re-login
             } else {
                 console.log('✅ Report access confirmed.');
