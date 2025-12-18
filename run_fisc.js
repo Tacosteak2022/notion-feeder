@@ -191,7 +191,11 @@ async function fetchReportLinks() {
                     const hasLoginInput = !!document.querySelector('input[name="email"]');
                     const hasLoginBtn = !!document.querySelector('button.g-recaptcha');
                     const hasProfile = bodyText.includes('Tài khoản') || bodyText.includes('Đăng xuất') || bodyText.includes('Account');
-                    return hasProfile && !(hasLoginInput || hasLoginBtn);
+
+                    // URL Check (Internal pages)
+                    const isAccountUrl = window.location.href.includes('/account/') && !window.location.href.includes('login');
+
+                    return (hasProfile || isAccountUrl) && !(hasLoginInput || hasLoginBtn);
                 });
 
                 if (loginSuccessAfterAttempt) {
