@@ -217,6 +217,9 @@ async function fetchReportLinks() {
 
                 if (loginResult.success) {
                     console.log('✅ CI Login with credentials successful.');
+                    console.log('⏳ Waiting 5s for session cookies to settle...');
+                    await new Promise(r => setTimeout(r, 5000));
+
                     // Save cookies only if local (CI doesn't need to save to disk usually, but good for debug)
                     if (!IS_CI) {
                         const currentCookies = await page.cookies();
