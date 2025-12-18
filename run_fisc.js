@@ -220,6 +220,16 @@ async function fetchReportLinks() {
                     console.log('⏳ Waiting 5s for session cookies to settle...');
                     await new Promise(r => setTimeout(r, 5000));
 
+                    // DEBUG: Inspect Session State
+                    const cookies = await page.cookies();
+                    console.log(`🍪 Cookies found: ${cookies.length}`);
+                    cookies.forEach(c => console.log(`   - ${c.name}: ${c.domain} (Expires: ${c.expires})`));
+
+                    // Set Referer to mock real user navigation
+                    await page.setExtraHTTPHeaders({
+                        'Referer': 'https://fisc.vn/account/community'
+                    });
+
                     // Save cookies only if local (CI doesn't need to save to disk usually, but good for debug)
                     if (!IS_CI) {
                         const currentCookies = await page.cookies();
