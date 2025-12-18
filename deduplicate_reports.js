@@ -31,20 +31,32 @@ const notion = new Client({ auth: NOTION_TOKEN });
             });
 
             response.results.forEach(page => {
-                const linkProp = page.properties.Link;
-                let link = null;
+                const titleProp = page.properties.Title;
+                const nameProp = page.properties.Name; // Represents "Stock Code" in this DB context as per fisc_link_extractor.js:317
 
-                if (linkProp && linkProp.url) {
-                    link = linkProp.url;
+                let title = null;
+                let stockCode = null;
+
+                if (titleProp && titleProp.title && titleProp.title.length > 0) {
+                    title = titleProp.title.map(t => t.plain_text).join('').trim();
                 }
 
-                if (link) {
-                    if (!linkToIds.has(link)) {
-                        linkToIds.set(link, []);
+                if (nameProp && nameProp.rich_text && nameProp.rich_text.length > 0) {
+                    stockCode = nameProp.rich_text.map(t => t.plain_text).join('').trim();
+                }
+
+                // Create a unique composite key for the report content
+                // Use Title + StockCode. If StockCode assumes empty string in extraction, handle that.
+                if (title) {
+                    const key = `${title}|${stockCode || 'General'}`;
+
+                    if (!linkToIds.has(key)) {
+                        linkToIds.set(key, []);
                     }
-                    linkToIds.get(link).push({
+                    linkToIds.get(key).push({
                         id: page.id,
-                        created_time: page.created_time
+                        created_time: page.created_time,
+                        url: page.properties.Link?.url
                     });
                 }
                 totalPages++;
@@ -59,23 +71,26 @@ const notion = new Client({ auth: NOTION_TOKEN });
         process.exit(1);
     }
 
-    console.log(`\n✅ Scanned ${totalPages} pages. Found ${linkToIds.size} unique links.`);
+    console.log(`\n✅ Scanned ${totalPages} pages. Found ${linkToIds.size} unique report entities (by Title+Stock).`);
 
     // 2. Identify and Delete Duplicates
     let deletedCount = 0;
-    for (const [link, items] of linkToIds) {
+    for (const [key, items] of linkToIds) {
         if (items.length > 1) {
-            // Sort by created_time descending (keep newest) or ascending (keep oldest).
-            // Usually we keep the newest one if data was updated, or oldest if we want stability.
-            // Let's keep the NEWEST one (latest fetch).
+            // Sort by created_time descending (keep newest)
             items.sort((a, b) => new Date(b.created_time) - new Date(a.created_time));
 
-            const toDelete = items.slice(1); // Keep index 0
+            const toDelete = items.slice(1); // Keep index 0 (Newest)
 
-            console.log(`[Duplicate] Link: ${link}`);
-            console.log(`   - Found ${items.length} copies. Keeping latest: ${items[0].id}`);
+            console.log(`[Duplicate] Key: "${key}"`);
+            console.log(`   - Found ${items.length} copies.`);
+            console.log(`     Keeping Latest: ${items[0].created_time} (ID: ${items[0].id})`);
+
+            // Optional: Update the URL of the kept item if the newer duplicate had a different URL? 
+            // For now, let's just clean up extras.
 
             for (const item of toDelete) {
+                console.log(`     Archiving Old: ${item.created_time} (ID: ${item.id})`);
                 try {
                     await notion.pages.update({
                         page_id: item.id,

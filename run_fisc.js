@@ -205,6 +205,19 @@ async function fetchReportLinks() {
                     }
                 } else {
                     console.error('❌ CI Login with credentials failed.');
+                    console.error('   Page Title:', await page.title());
+                    console.error('   Current URL:', page.url());
+
+                    // Capture debug info
+                    const screenshotPath = path.join(__dirname, 'login_fail.png');
+                    await page.screenshot({ path: screenshotPath });
+                    console.error(`   📸 Screenshot saved to ${screenshotPath} (Artifact)`);
+
+                    const htmlContent = await page.content();
+                    const htmlPath = path.join(__dirname, 'login_fail.html');
+                    fs.writeFileSync(htmlPath, htmlContent);
+                    console.error(`   📄 HTML Dump saved to ${htmlPath}`);
+
                     console.error('   Please check FISC_EMAIL/FISC_PASSWORD or update FISC_COOKIES.');
                     process.exit(1);
                 }
