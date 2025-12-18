@@ -166,8 +166,16 @@ async function fetchReportLinks() {
                 // Original CI login failure logic, now a fallback
                 if (!email || !password) {
                     console.error('❌ CI Login Failed: FISC_COOKIES invalid or expired, and FISC_EMAIL/FISC_PASSWORD not set.');
+                    console.error('   Please run locally, get fisc_cookies_export.json, and update the GitHub Secret.');
                     process.exit(1);
                 }
+
+                // CRITICAL FIX: Clear old/bad cookies before fresh login to avoid conflicts
+                console.log('🧹 Clearing old cookies to ensure fresh session...');
+                const client = await page.target().createCDPSession();
+                await client.send('Network.clearBrowserCookies');
+                await client.send('Network.clearBrowserCache');
+
                 console.log('Attempting login with provided credentials...');
 
                 // Ensure we are on login page

@@ -167,6 +167,13 @@ async function fetchReportLinks() {
                     console.error('   Please run locally, get fisc_cookies_export.json, and update the GitHub Secret.');
                     process.exit(1);
                 }
+
+                // CRITICAL FIX: Clear old/bad cookies before fresh login to avoid conflicts
+                console.log('🧹 Clearing old cookies to ensure fresh session...');
+                const client = await page.target().createCDPSession();
+                await client.send('Network.clearBrowserCookies');
+                await client.send('Network.clearBrowserCache');
+
                 console.log('Attempting login with provided credentials...');
 
                 // Ensure we are on login page
