@@ -139,8 +139,41 @@ async function fetchReportLinks() {
         // ZOMBIE SESSION CHECK:
         // Even if homepage says "LoggedIn", we must verify deep access to reports.
         if (loginStatus === true) {
-            console.log('✅ Homepage indicates logged in. Probing Report URL...');
-            await page.goto(REPORT_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
+            console.log('✅ Homepage indicates logged in. Attempting UI Navigation to Reports...');
+
+            // Log LocalStorage
+            const localStorageData = await page.evaluate(() => JSON.stringify(window.localStorage));
+            console.log('📦 LocalStorage Dump:', localStorageData);
+
+            try {
+                // Try to find the Report link in the sidebar or menu
+                // Known potential selectors for "Reports" or "Analysis"
+                const reportLinkFound = await page.evaluate(() => {
+                    const links = Array.from(document.querySelectorAll('a'));
+                    const target = links.find(a =>
+                        a.href.includes('/account/report') ||
+                        a.innerText.includes('Báo cáo') ||
+                        a.innerText.includes('Phân tích')
+                    );
+                    if (target) {
+                        target.click();
+                        return true;
+                    }
+                    return false;
+                });
+
+                if (reportLinkFound) {
+                    console.log('🖱️ Clicked "Report" link in UI. Waiting for navigation...');
+                    await page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 60000 });
+                } else {
+                    console.log('⚠️ Could not find "Report" link in UI. Falling back to direct URL...');
+                    await page.goto(REPORT_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
+                }
+            } catch (e) {
+                console.error('⚠️ UI Navigation failed:', e.message);
+                console.log('⚠️ Falling back to direct URL...');
+                await page.goto(REPORT_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
+            }
 
             if (page.url().includes('login')) {
                 console.warn('⚠️ Report access denied (Redirected to login). Session is invalid/zombie.');
