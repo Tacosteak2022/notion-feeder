@@ -187,19 +187,30 @@ async function fetchReportLinks() {
                 await page.click('button.g-recaptcha');
                 await page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 60000 });
 
-                const loginSuccessAfterAttempt = await page.evaluate(() => {
+                const loginResult = await page.evaluate(() => {
+                    const url = window.location.href;
+                    // 1. URL Check (Most reliable)
+                    if (url.includes('/account/') && !url.includes('login')) {
+                        return { success: true, reason: 'URL_MATCH', url };
+                    }
+
+                    // 2. Fallback: Text/Element Check
                     const bodyText = document.body.innerText;
                     const hasLoginInput = !!document.querySelector('input[name="email"]');
                     const hasLoginBtn = !!document.querySelector('button.g-recaptcha');
                     const hasProfile = bodyText.includes('Tài khoản') || bodyText.includes('Đăng xuất') || bodyText.includes('Account');
 
-                    // URL Check (Internal pages)
-                    const isAccountUrl = window.location.href.includes('/account/') && !window.location.href.includes('login');
-
-                    return (hasProfile || isAccountUrl) && !(hasLoginInput || hasLoginBtn);
+                    const success = hasProfile && !(hasLoginInput || hasLoginBtn);
+                    return {
+                        success,
+                        reason: success ? 'TEXT_MATCH' : 'TEXT_FAIL',
+                        details: { hasProfile, hasLoginInput, hasLoginBtn, url }
+                    };
                 });
 
-                if (loginSuccessAfterAttempt) {
+                console.log(`🔍 DEBUG: Login Check Result:`, JSON.stringify(loginResult, null, 2));
+
+                if (loginResult.success) {
                     console.log('✅ CI Login with credentials successful.');
                     // Save cookies only if local (CI doesn't need to save to disk usually, but good for debug)
                     if (!IS_CI) {
