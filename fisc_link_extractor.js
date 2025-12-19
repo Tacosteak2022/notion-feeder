@@ -336,51 +336,38 @@ async function fetchReportLinks() {
 
         // Ensure we are at report URL (if we logged in via credentials, we might be at home)
         if (!page.url().includes('report')) {
-            console.log('🕵️ Attempting "Iframe Injection" to bypass top-level redirect...');
+            console.log('🔍 Navigating to reports...');
+
+            // DEBUG: Log current page text to verify login state
+            try {
+                const pageText = await page.evaluate(() => document.body.innerText.substring(0, 500).replace(/\n/g, ' '));
+                console.log(`📄 Page Text (Pre-Nav): ${pageText}`);
+            } catch (e) { }
 
             try {
-                // Inject an iframe pointing to the report URL
-                await page.evaluate((url) => {
-                    const iframe = document.createElement('iframe');
-                    iframe.id = 'report-frame';
-                    iframe.src = url;
-                    iframe.style.width = '100%';
-                    iframe.style.height = '1000px';
-                    iframe.style.visibility = 'hidden';
-                    document.body.appendChild(iframe);
-                }, REPORT_URL);
-
-                console.log('⏳ Waiting for Iframe to load...');
-                // Wait for iframe to load content
-                await new Promise(r => setTimeout(r, 5000));
-
-                // Extract content from Iframe
-                const frameContent = await page.evaluate(() => {
-                    const iframe = document.getElementById('report-frame');
-                    if (!iframe || !iframe.contentWindow) return null;
-                    try {
-                        return iframe.contentDocument.body.innerHTML;
-                    } catch (e) {
-                        return null; // Cross-origin block if redirected to login (sometimes)
-                    }
-                });
-
-                if (frameContent && (frameContent.includes('login') && frameContent.includes('redirect_login'))) {
-                    console.error('❌ Iframe loaded Login page. Session is restricted.');
-                } else if (frameContent && frameContent.includes('<table')) {
-                    console.log('✅ Iframe load successful! Hydrating main page...');
-                    await page.setContent(frameContent, { waitUntil: 'domcontentloaded' });
-                    console.log('💉 HUD: Iframe content injected into main tab.');
-                } else {
-                    console.warn('⚠️ Iframe content ambiguous (length: ' + (frameContent ? frameContent.length : 0) + '). Trying direct navigation...');
-                    await page.goto(REPORT_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
-                }
-
-            } catch (e) {
-                console.log('⚠️ Iframe Injection failed:', e.message);
-                console.log('Falling back to direct URL...');
                 await page.goto(REPORT_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
+            } catch (e) {
+                console.log('⚠️ Navigation failed:', e.message);
             }
+        }
+
+        console.log(`📍 Current URL: ${page.url()}`);
+        if (page.url().includes('login')) {
+            console.error('❌ Error: Login failed (Redirected to login page).');
+            console.warn(`   Specific URL: ${page.url()}`);
+
+            // Log failure page text
+            try {
+                const failText = await page.evaluate(() => document.body.innerText.substring(0, 1000).replace(/\n/g, ' '));
+                console.log(`📄 Failure Page Text: ${failText}`);
+            } catch (e) { }
+
+            // Debug Screenshot
+            const failShot = path.join(__dirname, 'final_fail.png');
+            await page.screenshot({ path: failShot });
+            console.error(`   📸 Screenshot saved to ${failShot} (Artifact)`);
+
+            process.exit(1);
         }
 
         console.log(`📍 Current URL: ${page.url()}`);
