@@ -337,39 +337,61 @@ async function fetchReportLinks() {
         // Ensure we are at report URL (if we logged in via credentials, we might be at home)
         if (!page.url().includes('report')) {
             console.log('🔍 Navigating to reports (via UI Click)...');
-             try {
+            try {
+                // Save 'Community' page state for debugging
+                const commHtml = await page.content();
+                fs.writeFileSync(path.join(__dirname, 'community_page.html'), commHtml);
+
                 const reportLinkFound = await page.evaluate(() => {
                     const links = Array.from(document.querySelectorAll('a'));
-                    const target = links.find(a => 
-                        a.href.includes('/account/report') || 
+                    const target = links.find(a =>
+                        a.href.includes('/account/report') ||
                         a.innerText.includes('Báo cáo') ||
                         a.innerText.includes('Phân tích')
                     );
                     if (target) {
-                        target.click();
-                        return true;
+                        // Return info to Node context BEFORE clicking (cant click and return)
+                        // properly mimicking behavior requires careful serialization
+                        return { found: true, text: target.innerText, href: target.href };
                     }
-                    return false;
+                    return { found: false };
                 });
 
-                if (reportLinkFound) {
+                if (reportLinkFound.found) {
+                    console.log(`🖱️ Found target link: "${reportLinkFound.text}" (${reportLinkFound.href}). Clicking...`);
+
+                    // Re-find and click (safe way)
+                    await page.evaluate((href) => {
+                        const links = Array.from(document.querySelectorAll('a'));
+                        const target = links.find(a => a.href === href);
+                        if (target) target.click();
+                    }, reportLinkFound.href);
+
                     await page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 60000 });
                 } else {
                     console.log('⚠️ Could not find "Report" link. Fallback to direct URL...');
                     await page.goto(REPORT_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
                 }
             } catch (e) {
-                 console.log('⚠️ UI Navigation failed. Fallback to direct URL...');
-                 await page.goto(REPORT_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
+                console.log('⚠️ UI Navigation failed:', e.message);
+                console.log('Falling back to direct URL...');
+                await page.goto(REPORT_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
             }
         }
 
         console.log(`📍 Current URL: ${page.url()}`);
         if (page.url().includes('login')) {
             console.error('❌ Error: Login failed (Redirected to login page).');
-            // Check HTML
-            const html = await page.content();
-            if (html.includes('Tài khoản không tồn tại')) console.error("Reason: Account invalid.");
+            console.warn(`   Specific URL: ${page.url()}`);
+
+            // Debug Screenshot
+            const failShot = path.join(__dirname, 'final_fail.png');
+            await page.screenshot({ path: failShot });
+            console.error(`   📸 Screenshot saved to ${failShot} (Artifact)`);
+
+            const failHtml = path.join(__dirname, 'final_fail.html');
+            fs.writeFileSync(failHtml, await page.content());
+
             process.exit(1);
         }
 
