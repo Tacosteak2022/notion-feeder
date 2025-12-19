@@ -335,23 +335,37 @@ async function fetchReportLinks() {
         }
 
         // Ensure we are at report URL (if we logged in via credentials, we might be at home)
+        // Ensure we are at report URL (if we logged in via credentials, we might be at home)
         if (!page.url().includes('report')) {
-            console.log('🔄 Bouncing to Homepage to stabilize session...');
-            try {
-                // Bounce to home first to set root cookies (Use domcontentloaded for speed)
-                await page.goto('https://fisc.vn/', { waitUntil: 'domcontentloaded', timeout: 30000 });
-                await new Promise(r => setTimeout(r, 2000));
-            } catch (e) {
-                console.log('⚠️ Homepage Bounce failed (non-critical):', e.message);
-            }
+            console.log('⚡ Attempting "Fetch & Hydrate" strategy to bypass navigation redirect...');
 
-            // ALWAYS try to go to reports, even if bounce failed/timed out
-            console.log('📂 Navigating to Report URL...');
             try {
-                const response = await page.goto(REPORT_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
-                console.log(`   Response Status: ${response.status()}`);
+                // We are on /account/community or /, which is authenticated.
+                // Fetch the report page content DIRECTLY via JS (inherits perfect session context)
+                const reportHtml = await page.evaluate(async (url) => {
+                    const res = await fetch(url);
+                    return res.text();
+                }, REPORT_URL);
+
+                if (reportHtml.includes('login') && reportHtml.includes('redirect_login')) {
+                    console.error('❌ Fetch returned Login page. Session is truly restricted.');
+                } else if (reportHtml.includes('<table')) {
+                    console.log('✅ Fetch successful! In-memory report download complete.');
+
+                    // Manually hydrate the page with the fetched HTML
+                    await page.setContent(reportHtml, { waitUntil: 'domcontentloaded' });
+
+                    // Hack: Update generic logic to think we are on the right URL
+                    console.log('💉 HUD: Injecting report content into current tab...');
+                } else {
+                    console.warn('⚠️ Fetch result ambiguous. Trying traditional navigation as last resort...');
+                    await page.goto(REPORT_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
+                }
+
             } catch (e) {
-                console.error('❌ Report Navigation failed:', e.message);
+                console.log('⚠️ Fetch Hydration failed:', e.message);
+                console.log('Falling back to direct URL...');
+                await page.goto(REPORT_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
             }
         }
 
