@@ -340,7 +340,11 @@ async function fetchReportLinks() {
             try {
                 // XPath for "Báo cáo phân tích" text or href containing "account/report"
                 const linkSelector = '//a[contains(text(), "Báo cáo phân tích")] | //a[contains(@href, "account/report")]';
-                await page.waitForXPath(linkSelector, { timeout: 5000 });
+                // Fix: waitForXPath is deprecated in newer Puppeteer. Use waitForFunction.
+                await page.waitForFunction((xpath) => {
+                    const result = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
+                    return result.singleNodeValue !== null;
+                }, { timeout: 5000 }, linkSelector);
 
                 const links = await page.$x(linkSelector);
                 if (links.length > 0) {
