@@ -57,6 +57,7 @@ async function fetchReportLinks() {
 
     try {
         console.log(`🚀 Launching browser (CI: ${IS_CI})...`);
+        console.log('📦 Version: 2.1 - Generic Evaluate (No $x)');
 
         const launchConfig = {
             headless: IS_CI ? "new" : false, // Headless in CI, Visible Locally
