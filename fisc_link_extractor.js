@@ -336,8 +336,32 @@ async function fetchReportLinks() {
 
         // Ensure we are at report URL (if we logged in via credentials, we might be at home)
         if (!page.url().includes('report')) {
-            console.log('🔍 Navigating to reports...');
-            await page.goto(REPORT_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
+            console.log('🔍 Navigating to reports (via UI Click)...');
+             try {
+                const reportLinkFound = await page.evaluate(() => {
+                    const links = Array.from(document.querySelectorAll('a'));
+                    const target = links.find(a => 
+                        a.href.includes('/account/report') || 
+                        a.innerText.includes('Báo cáo') ||
+                        a.innerText.includes('Phân tích')
+                    );
+                    if (target) {
+                        target.click();
+                        return true;
+                    }
+                    return false;
+                });
+
+                if (reportLinkFound) {
+                    await page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 60000 });
+                } else {
+                    console.log('⚠️ Could not find "Report" link. Fallback to direct URL...');
+                    await page.goto(REPORT_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
+                }
+            } catch (e) {
+                 console.log('⚠️ UI Navigation failed. Fallback to direct URL...');
+                 await page.goto(REPORT_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
+            }
         }
 
         console.log(`📍 Current URL: ${page.url()}`);
