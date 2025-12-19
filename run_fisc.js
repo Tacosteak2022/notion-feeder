@@ -329,33 +329,49 @@ async function fetchReportLinks() {
         }
 
         // Ensure we are at report URL (if we logged in via credentials, we might be at home)
-        // Ensure we are at report URL (if we logged in via credentials, we might be at home)
         if (!page.url().includes('report')) {
-            console.log('⚡ Attempting "Fetch & Hydrate" strategy to bypass navigation redirect...');
+            console.log('🕵️ Attempting "Iframe Injection" to bypass top-level redirect...');
 
             try {
-                // We are on /account/community or /, which is authenticated.
-                // Fetch the report page content DIRECTLY via JS (inherits perfect session context)
-                const reportHtml = await page.evaluate(async (url) => {
-                    const res = await fetch(url);
-                    return res.text();
+                // Inject an iframe pointing to the report URL
+                await page.evaluate((url) => {
+                    const iframe = document.createElement('iframe');
+                    iframe.id = 'report-frame';
+                    iframe.src = url;
+                    iframe.style.width = '100%';
+                    iframe.style.height = '1000px';
+                    iframe.style.visibility = 'hidden';
+                    document.body.appendChild(iframe);
                 }, REPORT_URL);
 
-                if (reportHtml.includes('login') && reportHtml.includes('redirect_login')) {
-                    console.error('❌ Fetch returned Login page. Session is truly restricted.');
-                } else if (reportHtml.includes('<table')) {
-                    console.log('✅ Fetch successful! In-memory report download complete.');
+                console.log('⏳ Waiting for Iframe to load...');
+                // Wait for iframe to load content
+                await new Promise(r => setTimeout(r, 5000));
 
-                    // Manually hydrate the page with the fetched HTML
-                    await page.setContent(reportHtml, { waitUntil: 'domcontentloaded' });
-                    console.log('💉 HUD: Injecting report content into current tab...');
+                // Extract content from Iframe
+                const frameContent = await page.evaluate(() => {
+                    const iframe = document.getElementById('report-frame');
+                    if (!iframe || !iframe.contentWindow) return null;
+                    try {
+                        return iframe.contentDocument.body.innerHTML;
+                    } catch (e) {
+                        return null; // Cross-origin block if redirected to login (sometimes)
+                    }
+                });
+
+                if (frameContent && (frameContent.includes('login') && frameContent.includes('redirect_login'))) {
+                    console.error('❌ Iframe loaded Login page. Session is restricted.');
+                } else if (frameContent && frameContent.includes('<table')) {
+                    console.log('✅ Iframe load successful! Hydrating main page...');
+                    await page.setContent(frameContent, { waitUntil: 'domcontentloaded' });
+                    console.log('💉 HUD: Iframe content injected into main tab.');
                 } else {
-                    console.warn('⚠️ Fetch result ambiguous. Trying traditional navigation as last resort...');
+                    console.warn('⚠️ Iframe content ambiguous (length: ' + (frameContent ? frameContent.length : 0) + '). Trying direct navigation...');
                     await page.goto(REPORT_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
                 }
 
             } catch (e) {
-                console.log('⚠️ Fetch Hydration failed:', e.message);
+                console.log('⚠️ Iframe Injection failed:', e.message);
                 console.log('Falling back to direct URL...');
                 await page.goto(REPORT_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
             }
