@@ -346,13 +346,19 @@ async function fetchReportLinks() {
                     return result.singleNodeValue !== null;
                 }, { timeout: 5000 }, linkSelector);
 
-                const links = await page.$x(linkSelector);
-                if (links.length > 0) {
-                    console.log('👆 Link found! Clicking element...');
-                    await Promise.all([
-                        page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 60000 }),
-                        links[0].click(),
-                    ]);
+                const clicked = await page.evaluate((xpath) => {
+                    const result = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
+                    const node = result.singleNodeValue;
+                    if (node) {
+                        node.click();
+                        return true;
+                    }
+                    return false;
+                }, linkSelector);
+
+                if (clicked) {
+                    console.log('👆 Link found! Clicked element inside page.');
+                    await page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 60000 });
                 } else {
                     console.warn('⚠️ Link NOT found. Falling back to direct navigation...');
                     await page.goto(REPORT_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
