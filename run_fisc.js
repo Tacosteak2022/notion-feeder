@@ -352,6 +352,11 @@ async function fetchReportLinks() {
                 if (reportLinkFound.found) {
                     console.log(`🖱️ Found target link: "${reportLinkFound.text}" (${reportLinkFound.href}). Clicking...`);
 
+                    // REFRESH STATE: Ensure cookies and headers are active for this navigation
+                    const cookies = await page.cookies();
+                    await page.setCookie(...cookies);
+                    await page.setExtraHTTPHeaders({ 'Referer': page.url() });
+
                     // Re-find and click
                     await page.evaluate((href) => {
                         const links = Array.from(document.querySelectorAll('a'));
