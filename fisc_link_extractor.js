@@ -336,51 +336,18 @@ async function fetchReportLinks() {
 
         // Ensure we are at report URL (if we logged in via credentials, we might be at home)
         if (!page.url().includes('report')) {
-            console.log('🔍 Navigating to reports (via UI Click)...');
+            console.log('🔄 Bouncing to Homepage to stabilize session...');
             try {
-                // Save 'Community' page state for debugging
-                const commHtml = await page.content();
-                fs.writeFileSync(path.join(__dirname, 'community_page.html'), commHtml);
+                // Bounce to home first to set root cookies
+                await page.goto('https://fisc.vn/', { waitUntil: 'networkidle2', timeout: 60000 });
+                await new Promise(r => setTimeout(r, 3000));
 
-                const reportLinkFound = await page.evaluate(() => {
-                    const links = Array.from(document.querySelectorAll('a'));
-                    const target = links.find(a =>
-                        a.href.includes('/account/report') ||
-                        a.innerText.includes('Báo cáo') ||
-                        a.innerText.includes('Phân tích')
-                    );
-                    if (target) {
-                        // Return info to Node context BEFORE clicking (cant click and return)
-                        // properly mimicking behavior requires careful serialization
-                        return { found: true, text: target.innerText, href: target.href };
-                    }
-                    return { found: false };
-                });
+                console.log('📂 Navigating to Report URL...');
+                const response = await page.goto(REPORT_URL, { waitUntil: 'networkidle2', timeout: 60000 });
+                console.log(`   Response Status: ${response.status()}`);
 
-                if (reportLinkFound.found) {
-                    console.log(`🖱️ Found target link: "${reportLinkFound.text}" (${reportLinkFound.href}). Clicking...`);
-
-                    // REFRESH STATE: Ensure cookies and headers are active for this navigation
-                    const cookies = await page.cookies();
-                    await page.setCookie(...cookies);
-                    await page.setExtraHTTPHeaders({ 'Referer': page.url() });
-
-                    // Re-find and click (safe way)
-                    await page.evaluate((href) => {
-                        const links = Array.from(document.querySelectorAll('a'));
-                        const target = links.find(a => a.href === href);
-                        if (target) target.click();
-                    }, reportLinkFound.href);
-
-                    await page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 60000 });
-                } else {
-                    console.log('⚠️ Could not find "Report" link. Fallback to direct URL...');
-                    await page.goto(REPORT_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
-                }
             } catch (e) {
-                console.log('⚠️ UI Navigation failed:', e.message);
-                console.log('Falling back to direct URL...');
-                await page.goto(REPORT_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
+                console.log('⚠️ Navigation failed:', e.message);
             }
         }
 
