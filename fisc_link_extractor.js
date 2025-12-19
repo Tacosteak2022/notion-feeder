@@ -338,16 +338,20 @@ async function fetchReportLinks() {
         if (!page.url().includes('report')) {
             console.log('🔄 Bouncing to Homepage to stabilize session...');
             try {
-                // Bounce to home first to set root cookies
-                await page.goto('https://fisc.vn/', { waitUntil: 'networkidle2', timeout: 60000 });
-                await new Promise(r => setTimeout(r, 3000));
-
-                console.log('📂 Navigating to Report URL...');
-                const response = await page.goto(REPORT_URL, { waitUntil: 'networkidle2', timeout: 60000 });
-                console.log(`   Response Status: ${response.status()}`);
-
+                // Bounce to home first to set root cookies (Use domcontentloaded for speed)
+                await page.goto('https://fisc.vn/', { waitUntil: 'domcontentloaded', timeout: 30000 });
+                await new Promise(r => setTimeout(r, 2000));
             } catch (e) {
-                console.log('⚠️ Navigation failed:', e.message);
+                console.log('⚠️ Homepage Bounce failed (non-critical):', e.message);
+            }
+
+            // ALWAYS try to go to reports, even if bounce failed/timed out
+            console.log('📂 Navigating to Report URL...');
+            try {
+                const response = await page.goto(REPORT_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
+                console.log(`   Response Status: ${response.status()}`);
+            } catch (e) {
+                console.error('❌ Report Navigation failed:', e.message);
             }
         }
 
