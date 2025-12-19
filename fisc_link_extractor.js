@@ -42,12 +42,10 @@ async function fetchReportLinks() {
 
     if (!email || !password) {
         console.warn('⚠️ Warning: FISC_EMAIL or FISC_PASSWORD is not set in .env. Reliance on Persistent Profile only.');
-        // process.exit(1); // Don't exit, try profile
     }
 
     if (!notionKey || !notionDbId) {
         console.warn('⚠️ Warning: Notion secrets are missing. Reports will be fetched but NOT synced.');
-        // process.exit(1);
     }
 
     const notion = new Client({ auth: notionKey });
@@ -336,18 +334,30 @@ async function fetchReportLinks() {
 
         // Ensure we are at report URL (if we logged in via credentials, we might be at home)
         if (!page.url().includes('report')) {
-            console.log('🔍 Navigating to reports...');
+            console.log('🔍 Searching for "Báo cáo phân tích" link on current page...');
 
-            // DEBUG: Log current page text to verify login state
+            // LOGIC: Use human interaction (click) instead of goto to preserve headers/session
             try {
-                const pageText = await page.evaluate(() => document.body.innerText.substring(0, 500).replace(/\n/g, ' '));
-                console.log(`📄 Page Text (Pre-Nav): ${pageText}`);
-            } catch (e) { }
+                // XPath for "Báo cáo phân tích" text or href containing "account/report"
+                const linkSelector = '//a[contains(text(), "Báo cáo phân tích")] | //a[contains(@href, "account/report")]';
+                await page.waitForXPath(linkSelector, { timeout: 5000 });
 
-            try {
-                await page.goto(REPORT_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
+                const links = await page.$x(linkSelector);
+                if (links.length > 0) {
+                    console.log('👆 Link found! Clicking element...');
+                    await Promise.all([
+                        page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 60000 }),
+                        links[0].click(),
+                    ]);
+                } else {
+                    console.warn('⚠️ Link NOT found. Falling back to direct navigation...');
+                    await page.goto(REPORT_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
+                }
+
             } catch (e) {
-                console.log('⚠️ Navigation failed:', e.message);
+                console.log('⚠️ Click navigation failed:', e.message);
+                console.log('   Falling back to direct goto...');
+                await page.goto(REPORT_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
             }
         }
 
@@ -366,22 +376,6 @@ async function fetchReportLinks() {
             const failShot = path.join(__dirname, 'final_fail.png');
             await page.screenshot({ path: failShot });
             console.error(`   📸 Screenshot saved to ${failShot} (Artifact)`);
-
-            process.exit(1);
-        }
-
-        console.log(`📍 Current URL: ${page.url()}`);
-        if (page.url().includes('login')) {
-            console.error('❌ Error: Login failed (Redirected to login page).');
-            console.warn(`   Specific URL: ${page.url()}`);
-
-            // Debug Screenshot
-            const failShot = path.join(__dirname, 'final_fail.png');
-            await page.screenshot({ path: failShot });
-            console.error(`   📸 Screenshot saved to ${failShot} (Artifact)`);
-
-            const failHtml = path.join(__dirname, 'final_fail.html');
-            fs.writeFileSync(failHtml, await page.content());
 
             process.exit(1);
         }
