@@ -91,22 +91,50 @@ async function fetchReportLinks() {
             // CI Mode: Try to load cookies from Env Var
             console.log('☁️ CI Mode detected. Attempting to load FISC_COOKIES...');
             if (process.env.FISC_COOKIES) {
-                try {
-                    const rawCookies = JSON.parse(process.env.FISC_COOKIES);
-                    // Fix: cookieStore.getAll() can return null 'domain', which breaks Puppeteer.
-                    // We sanitize by removing null domains and adding 'url' instead.
-                    const validCookies = rawCookies.map(c => {
-                        if (!c.domain) {
-                            const { domain, ...rest } = c;
-                            return { ...rest, url: 'https://fisc.vn' };
-                        }
-                        return c;
-                    });
+                if (process.env.FISC_COOKIES) {
+                    try {
+                        let validCookies = [];
+                        const envCookies = process.env.FISC_COOKIES.trim();
 
-                    await page.setCookie(...validCookies);
-                    console.log(`   Loaded ${validCookies.length} session cookies.`);
-                } catch (e) {
-                    console.error('❌ Error loading FISC_COOKIES:', e.message);
+                        if (envCookies.startsWith('[')) {
+                            // Case A: JSON Array (from EditThisCookie or similar)
+                            const rawCookies = JSON.parse(envCookies);
+                            validCookies = rawCookies.map(c => {
+                                // Sanitize null domains
+                                if (!c.domain) {
+                                    const { domain, ...rest } = c;
+                                    return { ...rest, url: 'https://fisc.vn' };
+                                }
+                                return c;
+                            });
+                        } else {
+                            // Case B: Raw Cookie String (from Network Header)
+                            // Format: "name=value; name2=value2"
+                            console.log('   Parsing raw cookie string...');
+                            validCookies = envCookies.split(';')
+                                .map(pair => pair.trim())
+                                .filter(pair => pair.length > 0)
+                                .map(pair => {
+                                    const splitIndex = pair.indexOf('=');
+                                    if (splitIndex === -1) return null;
+                                    const name = pair.substring(0, splitIndex);
+                                    const value = pair.substring(splitIndex + 1);
+                                    return {
+                                        name: name,
+                                        value: value,
+                                        domain: 'fisc.vn',
+                                        path: '/',
+                                        url: 'https://fisc.vn' // Puppeteer helper
+                                    };
+                                })
+                                .filter(c => c !== null);
+                        }
+
+                        await page.setCookie(...validCookies);
+                        console.log(`   Loaded ${validCookies.length} session cookies.`);
+                    } catch (e) {
+                        console.error('❌ Error loading FISC_COOKIES:', e.message);
+                    }
                 }
             }
         }
