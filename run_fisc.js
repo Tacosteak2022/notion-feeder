@@ -68,7 +68,7 @@ async function fetchReportLinks() {
 
     try {
         console.log(`🚀 Launching browser (CI: ${IS_CI})...`);
-        console.log('📦 Version: 3.5 - Removed Deprecated API (Stable Timing Test)');
+        console.log('📦 Version: 3.6 - Simplified Logic (Pure DOM Click)');
 
         // CRITICAL: Run HEADFUL (visible) to defeat Bot Detection.
         // In CI, this works because we are using 'xvfb-run' (Virtual Framebuffer).
@@ -451,30 +451,23 @@ async function fetchReportLinks() {
                     return result.singleNodeValue !== null;
                 }, { timeout: 5000 }, linkSelector);
 
-                // Mouse movement simulation before click
-                // Fix: page.$x is deprecated. Use evaluateHandle to get element.
-                const linkHandle = await page.evaluateHandle((xpath) => {
-                    const result = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
-                    return result.singleNodeValue;
-                }, linkSelector);
-
-                if (linkHandle.asElement()) {
-                    const box = await linkHandle.boundingBox();
-                    if (box) {
-                        await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-                        await randomSleep(200, 600);
-                    }
-                }
-
-                const clicked = await page.evaluate((xpath) => {
+                // SIMPLIFIED ROBUST LOGIC (v3.6):
+                // Perform "Human" delays in JS, then pure DOM click. 
+                // No complex Puppeteer API calls that might crash.
+                const clicked = await page.evaluate(async (xpath) => {
                     const result = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
                     const node = result.singleNodeValue;
                     if (node) {
+                        // Human-ish: Scroll into view first
+                        node.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        // Click
                         node.click();
                         return true;
                     }
                     return false;
                 }, linkSelector);
+
+
 
                 if (clicked) {
                     console.log('👆 Link found! Clicked element inside page.');
