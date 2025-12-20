@@ -65,58 +65,87 @@ async function fetchReportLinks() {
 
     try {
         console.log(`🚀 Launching browser (CI: ${IS_CI})...`);
-        console.log('📦 Version: 3.1 - Deep Spoofing (Timezone + Client Hints)');
+        console.log('📦 Version: 3.2 - Geo-Blocking Diagnosis (Proxy + GPS)');
 
         // CRITICAL: Run HEADFUL (visible) to defeat Bot Detection.
         // In CI, this works because we are using 'xvfb-run' (Virtual Framebuffer).
+        /* 
         const launchConfig = {
             headless: false,
             defaultViewport: null,
             args: ['--start-maximized', '--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
-        };
+        }; 
+        */
 
         // Only use persistent profile LOCALLY
         if (!IS_CI) {
-            launchConfig.userDataDir = USER_DATA_DIR;
+            // launchConfig.userDataDir = USER_DATA_DIR; // Temporarily fix scope issue
         }
 
-        browser = await puppeteer.launch(launchConfig);
-        const page = await browser.newPage();
+        // browser = await puppeteer.launch(launchConfig); // Removed premature launch
+        // const page = await browser.newPage(); // Removed premature page 
 
         // 1. Set Realistic User Agent & Client Hints (Fix "Windows UA on Linux" detection)
-        // Fix: Sync User-Agent with the Session Cookies to prevent "Session Hijacking" detection
         const customUA = process.env.FISC_USER_AGENT;
         let userAgentToUse = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 
         if (customUA) {
             console.log('🎭 Applying Custom User-Agent to match session...');
             userAgentToUse = customUA;
-            console.log(`   User-Agent: ${customUA.substring(0, 50)}...`);
         }
 
+        const launchConfig = {
+            headless: false,
+            defaultViewport: null,
+            args: [
+                '--start-maximized',
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-dev-shm-usage',
+                '--disable-blink-features=AutomationControlled' // Extra stealth
+            ]
+        };
+
+        // PROXY CONFIGURATION (For bypassing Geo-Blocking)
+        if (process.env.FISC_PROXY) {
+            console.log(`🌐 Using Proxy: ${process.env.FISC_PROXY}`);
+            launchConfig.args.push(`--proxy-server=${process.env.FISC_PROXY}`);
+        }
+
+        browser = await puppeteer.launch(launchConfig);
+        const page = await browser.newPage();
+
+        // 2. Deep Spoofing (Identity & Location)
         await page.setUserAgent(userAgentToUse);
 
-        // EXTRA SECURITY: Spoof Client Hints to match Windows (since we are on Linux CI)
         await page.setExtraHTTPHeaders({
-            'Accept-Language': 'vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7', // Match Vietnam locale
-            'Sec-Ch-Ua-Platform': '"Windows"', // Force Windows platform
+            'Accept-Language': 'vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7',
+            'Sec-Ch-Ua-Platform': '"Windows"',
             'Sec-Ch-Ua-Mobile': '?0'
         });
 
-        // Spoof Timezone to Vietnam (Match the likely session origin)
         await page.emulateTimezone('Asia/Ho_Chi_Minh');
+
+        // GPS Spoofing (Ho Chi Minh City) - In case they check navigator.geolocation
+        // Note: This won't fix IP-based blocking, but it helps consistency.
+        await page.setGeolocation({ latitude: 10.762622, longitude: 106.660172 });
+
+        // Network Check (Debug IP)
+        try {
+            console.log('🌍 Checking Visible IP Address...');
+            await page.goto('https://api.ipify.org?format=json', { waitUntil: 'networkidle2', timeout: 15000 });
+            const ipInfo = await page.evaluate(() => document.body.innerText);
+            console.log(`📍 CI Machine IP: ${ipInfo}`);
+        } catch (e) {
+            console.warn('⚠️ Could not check IP (Proxy might be slow or blocked):', e.message);
+        }
 
         await page.setViewport({ width: 1280, height: 800 });
 
         // Remove navigator.webdriver
         await page.evaluateOnNewDocument(() => {
-            Object.defineProperty(navigator, 'webdriver', {
-                get: () => false,
-            });
-            // Overwrite platform to match UA
-            Object.defineProperty(navigator, 'platform', {
-                get: () => 'Win32',
-            });
+            Object.defineProperty(navigator, 'webdriver', { get: () => false });
+            Object.defineProperty(navigator, 'platform', { get: () => 'Win32' });
         });
 
         // 1. Session Setup

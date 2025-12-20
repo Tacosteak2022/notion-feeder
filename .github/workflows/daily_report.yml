@@ -49,6 +49,7 @@ jobs:
         env:
           FISC_COOKIES: ${{ secrets.FISC_COOKIES }}
           FISC_USER_AGENT: ${{ secrets.FISC_USER_AGENT }}
+          FISC_PROXY: ${{ secrets.FISC_PROXY }}
           # Force NOT CI mode logic for headless, but keep CI env for logs
           DISPLAY: :99 
         run: xvfb-run --auto-servernum --server-args="-screen 0 1280x960x24" node fisc_link_extractor.js
