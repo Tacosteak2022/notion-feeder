@@ -208,15 +208,20 @@ async function main() {
                         }
 
                         // 4. Summarize
-                        console.log(`Generating AI summary using ${MODEL_NAME}...`);
-                        const model = genAI.getGenerativeModel({
-                            model: MODEL_NAME,
-                            systemInstruction: SYSTEM_PROMPT
-                        });
+                        try {
+                            console.log(`Generating AI summary using ${MODEL_NAME}...`);
+                            const model = genAI.getGenerativeModel({
+                                model: MODEL_NAME,
+                                systemInstruction: SYSTEM_PROMPT
+                            });
 
-                        const result = await model.generateContent(textToRead);
-                        const summary = result.response.text();
-                        safeSummary = summary.substring(0, 2000);
+                            const result = await model.generateContent(textToRead);
+                            const summary = result.response.text();
+                            safeSummary = summary.substring(0, 2000);
+                        } catch (aiError) {
+                            console.error(`AI Summary Failed for ${item.title}: ${aiError.message}`);
+                            safeSummary = `AI Summary Failed: ${aiError.message}`;
+                        }
                     }
 
                     // 5. Log It / Create Page
