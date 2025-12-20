@@ -65,7 +65,7 @@ async function fetchReportLinks() {
 
     try {
         console.log(`🚀 Launching browser (CI: ${IS_CI})...`);
-        console.log('📦 Version: 3.2 - Geo-Blocking Diagnosis (Proxy + GPS)');
+        console.log('📦 Version: 3.3 - Human Timing (Anti-Bot Delays)');
 
         // CRITICAL: Run HEADFUL (visible) to defeat Bot Detection.
         // In CI, this works because we are using 'xvfb-run' (Virtual Framebuffer).
@@ -437,11 +437,26 @@ async function fetchReportLinks() {
             try {
                 // XPath for "Báo cáo phân tích" text or href containing "account/report"
                 const linkSelector = '//a[contains(text(), "Báo cáo phân tích")] | //a[contains(@href, "account/report")]';
+
+                // HUMAN BEHAVIOR: Random pause before acting (2-4 seconds)
+                console.log('🧘 "Thinking" (Human Delay)...');
+                await randomSleep(2000, 4500);
+
                 // Fix: waitForXPath is deprecated in newer Puppeteer. Use waitForFunction.
                 await page.waitForFunction((xpath) => {
                     const result = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
                     return result.singleNodeValue !== null;
                 }, { timeout: 5000 }, linkSelector);
+
+                // Mouse movement simulation before click
+                const linkElement = await page.$x(linkSelector);
+                if (linkElement && linkElement.length > 0) {
+                    const box = await linkElement[0].boundingBox();
+                    if (box) {
+                        await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+                        await randomSleep(200, 600);
+                    }
+                }
 
                 const clicked = await page.evaluate((xpath) => {
                     const result = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
