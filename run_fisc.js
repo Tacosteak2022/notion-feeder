@@ -1,35 +1,30 @@
-const puppeteer = require('puppeteer');
-const { Client } = require('@notionhq/client');
 const fs = require('fs');
 const path = require('path');
+// Use puppeteer-extra with stealth plugin to bypass bot detection (headless detection)
+const puppeteer = require('puppeteer-extra');
+const StealthPlugin = require('puppeteer-extra-plugin-stealth');
+puppeteer.use(StealthPlugin());
 
+const { Client } = require("@notionhq/client");
+require('dotenv').config();
+
+// CONFIG
 const LOGIN_URL = 'https://fisc.vn/account/login';
 const REPORT_URL = 'https://fisc.vn/account/report';
 
-// Manual .env parser
-function loadEnv() {
-    try {
-        const envPath = path.join(__dirname, '.env');
-        if (fs.existsSync(envPath)) {
-            let content = fs.readFileSync(envPath, 'utf8');
-            if (content.charCodeAt(0) === 0xFEFF) content = content.slice(1);
-            content.split('\n').forEach(line => {
-                line = line.trim();
-                if (!line || line.startsWith('#')) return;
-                const eqIdx = line.indexOf('=');
-                if (eqIdx > 0) {
-                    const key = line.substring(0, eqIdx).trim();
-                    let value = line.substring(eqIdx + 1).trim();
-                    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
-                        value = value.slice(1, -1);
-                    }
-                    process.env[key] = value;
-                }
+if (eqIdx > 0) {
+    const key = line.substring(0, eqIdx).trim();
+    let value = line.substring(eqIdx + 1).trim();
+    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+        value = value.slice(1, -1);
+    }
+    process.env[key] = value;
+}
             });
         }
     } catch (e) {
-        console.warn('Could not read .env file:', e.message);
-    }
+    console.warn('Could not read .env file:', e.message);
+}
 }
 
 loadEnv();

@@ -18,6 +18,8 @@
         "dotenv": "^17.2.3",
         "jsdom": "^25.0.1",
         "puppeteer": "^23.10.1",
+        "puppeteer-extra": "^3.3.6",
+        "puppeteer-extra-plugin-stealth": "^2.11.2",
         "rss-parser": "^3.13.0",
         "yahoo-finance2": "^3.10.2"
     }

@@ -49,15 +49,15 @@ async function fetchReportLinks() {
     }
 
     const notion = new Client({ auth: notionKey });
-    let browser;
+    // let browser; // Moved declaration up
 
     // Config based on environment
-    const IS_CI = process.env.CI === 'true';
+    // const IS_CI = process.env.CI === 'true'; // Moved declaration up
     const USER_DATA_DIR = path.join(__dirname, 'browser_profile');
 
     try {
         console.log(`🚀 Launching browser (CI: ${IS_CI})...`);
-        console.log('📦 Version: 2.3 - Cookie Parser V2 (Raw String Support)');
+        console.log('📦 Version: 2.4 - Stealth Mode (Puppeteer Extra)');
 
         const launchConfig = {
             headless: IS_CI ? "new" : false, // Headless in CI, Visible Locally
