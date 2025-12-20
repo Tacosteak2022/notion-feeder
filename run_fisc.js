@@ -16,6 +16,9 @@ const REPORT_URL = 'https://fisc.vn/account/report';
 // CI usually needs "new" headless mode, invalid session sometimes redirects loops
 const IS_CI = process.env.CI === 'true';
 
+// Human Delay helper - Global Scope
+const randomSleep = (min, max) => new Promise(r => setTimeout(r, Math.floor(Math.random() * (max - min + 1)) + min));
+
 // Manual .env parser
 function loadEnv() {
     try {

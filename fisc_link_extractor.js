@@ -16,6 +16,9 @@ const REPORT_URL = 'https://fisc.vn/account/report';
 // CI usually needs "new" headless mode, invalid session sometimes redirects loops
 const IS_CI = process.env.CI === 'true';
 
+// Human Delay helper - Global Scope
+const randomSleep = (min, max) => new Promise(r => setTimeout(r, Math.floor(Math.random() * (max - min + 1)) + min));
+
 // Manual .env parser
 function loadEnv() {
     try {
@@ -65,7 +68,7 @@ async function fetchReportLinks() {
 
     try {
         console.log(`🚀 Launching browser (CI: ${IS_CI})...`);
-        console.log('📦 Version: 3.3 - Human Timing (Anti-Bot Delays)');
+        console.log('📦 Version: 3.4 - Fixed Syntax Error (Ready for Timing Test)');
 
         // CRITICAL: Run HEADFUL (visible) to defeat Bot Detection.
         // In CI, this works because we are using 'xvfb-run' (Virtual Framebuffer).
