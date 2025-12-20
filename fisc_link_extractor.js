@@ -65,10 +65,12 @@ async function fetchReportLinks() {
 
     try {
         console.log(`🚀 Launching browser (CI: ${IS_CI})...`);
-        console.log('📦 Version: 2.6 - User-Agent Sync (Final Fix)');
+        console.log('📦 Version: 3.0 - Headful Mode (Xvfb Virtual Display)');
 
+        // CRITICAL: Run HEADFUL (visible) to defeat Bot Detection.
+        // In CI, this works because we are using 'xvfb-run' (Virtual Framebuffer).
         const launchConfig = {
-            headless: IS_CI ? "new" : false, // Headless in CI, Visible Locally
+            headless: false,
             defaultViewport: null,
             args: ['--start-maximized', '--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
         };

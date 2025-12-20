@@ -23,6 +23,11 @@ jobs:
       - name: Install dependencies
         run: npm install
 
+      - name: Install system dependencies (Xvfb)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb
+
       - name: Create .env file
         run: |
           echo "FISC_EMAIL=${{ secrets.FISC_EMAIL }}" > .env
@@ -40,11 +45,13 @@ jobs:
         run: node ai-feed.js
         continue-on-error: true
 
-      - name: Run FinSuccess Report Fetcher
+      - name: Run FinSuccess Report Fetcher (Headful Mode with Xvfb)
         env:
           FISC_COOKIES: ${{ secrets.FISC_COOKIES }}
           FISC_USER_AGENT: ${{ secrets.FISC_USER_AGENT }}
-        run: node fisc_link_extractor.js
+          # Force NOT CI mode logic for headless, but keep CI env for logs
+          DISPLAY: :99 
+        run: xvfb-run --auto-servernum --server-args="-screen 0 1280x960x24" node fisc_link_extractor.js
         continue-on-error: true
 
       - name: Run VDSC Link Extractor
