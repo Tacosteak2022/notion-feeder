@@ -1,10 +1,20 @@
-const puppeteer = require('puppeteer');
-const { Client } = require('@notionhq/client');
 const fs = require('fs');
 const path = require('path');
+// Use puppeteer-extra with stealth plugin to bypass bot detection (headless detection)
+const puppeteer = require('puppeteer-extra');
+const StealthPlugin = require('puppeteer-extra-plugin-stealth');
+puppeteer.use(StealthPlugin());
 
+const { Client } = require("@notionhq/client");
+require('dotenv').config();
+
+// CONFIG
 const LOGIN_URL = 'https://fisc.vn/account/login';
 const REPORT_URL = 'https://fisc.vn/account/report';
+
+// HEADLESS MODE CONFIG
+// CI usually needs "new" headless mode, invalid session sometimes redirects loops
+const IS_CI = process.env.CI === 'true';
 
 // Manual .env parser
 function loadEnv() {
@@ -49,15 +59,13 @@ async function fetchReportLinks() {
     }
 
     const notion = new Client({ auth: notionKey });
-    // let browser; // Moved declaration up
-
-    // Config based on environment
-    // const IS_CI = process.env.CI === 'true'; // Moved declaration up
+    let browser;
+    // const IS_CI = process.env.CI === 'true'; // Removed local declaration
     const USER_DATA_DIR = path.join(__dirname, 'browser_profile');
 
     try {
         console.log(`🚀 Launching browser (CI: ${IS_CI})...`);
-        console.log('📦 Version: 2.4 - Stealth Mode (Puppeteer Extra)');
+        console.log('📦 Version: 2.5 - Stealth Mode Corrected');
 
         const launchConfig = {
             headless: IS_CI ? "new" : false, // Headless in CI, Visible Locally

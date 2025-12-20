@@ -12,19 +12,34 @@ require('dotenv').config();
 const LOGIN_URL = 'https://fisc.vn/account/login';
 const REPORT_URL = 'https://fisc.vn/account/report';
 
-if (eqIdx > 0) {
-    const key = line.substring(0, eqIdx).trim();
-    let value = line.substring(eqIdx + 1).trim();
-    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
-        value = value.slice(1, -1);
-    }
-    process.env[key] = value;
-}
+// HEADLESS MODE CONFIG
+// CI usually needs "new" headless mode, invalid session sometimes redirects loops
+const IS_CI = process.env.CI === 'true';
+
+// Manual .env parser
+function loadEnv() {
+    try {
+        const envPath = path.join(__dirname, '.env');
+        if (fs.existsSync(envPath)) {
+            let content = fs.readFileSync(envPath, 'utf8');
+            if (content.charCodeAt(0) === 0xFEFF) content = content.slice(1);
+            content.split('\n').forEach(line => {
+                line = line.trim();
+                if (!line || line.startsWith('#')) return;
+                const eqIdx = line.indexOf('=');
+                if (eqIdx > 0) {
+                    const key = line.substring(0, eqIdx).trim();
+                    let value = line.substring(eqIdx + 1).trim();
+                    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+                        value = value.slice(1, -1);
+                    }
+                    process.env[key] = value;
+                }
             });
         }
     } catch (e) {
-    console.warn('Could not read .env file:', e.message);
-}
+        console.warn('Could not read .env file:', e.message);
+    }
 }
 
 loadEnv();
@@ -45,8 +60,7 @@ async function fetchReportLinks() {
 
     const notion = new Client({ auth: notionKey });
     let browser;
-    // Config based on environment
-    const IS_CI = process.env.CI === 'true';
+    // const IS_CI = process.env.CI === 'true'; // Removed local declaration
     const USER_DATA_DIR = path.join(__dirname, 'browser_profile');
 
     try {
