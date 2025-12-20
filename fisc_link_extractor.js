@@ -65,7 +65,7 @@ async function fetchReportLinks() {
 
     try {
         console.log(`🚀 Launching browser (CI: ${IS_CI})...`);
-        console.log('📦 Version: 2.5 - Stealth Mode Corrected');
+        console.log('📦 Version: 2.6 - User-Agent Sync (Final Fix)');
 
         const launchConfig = {
             headless: IS_CI ? "new" : false, // Headless in CI, Visible Locally
@@ -82,7 +82,16 @@ async function fetchReportLinks() {
         const page = await browser.newPage();
 
         // 1. Set Realistic User Agent (Avoid HeadlessChrome detection)
-        await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+        // Fix: Sync User-Agent with the Session Cookies to prevent "Session Hijacking" detection
+        const customUA = process.env.FISC_USER_AGENT;
+        if (customUA) {
+            console.log('🎭 Applying Custom User-Agent to match session...');
+            await page.setUserAgent(customUA);
+            console.log(`   User-Agent: ${customUA.substring(0, 50)}...`);
+        } else {
+            // Default Fallback
+            await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+        }
 
         await page.setViewport({ width: 1280, height: 800 });
         await page.setExtraHTTPHeaders({
