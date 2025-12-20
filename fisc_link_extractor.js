@@ -94,11 +94,21 @@ async function fetchReportLinks() {
             console.log('☁️ CI Mode detected. Attempting to load FISC_COOKIES...');
             if (process.env.FISC_COOKIES) {
                 try {
-                    const cookies = JSON.parse(process.env.FISC_COOKIES);
-                    await page.setCookie(...cookies);
-                    console.log(`   Loaded ${cookies.length} session cookies.`);
+                    const rawCookies = JSON.parse(process.env.FISC_COOKIES);
+                    // Fix: cookieStore.getAll() can return null 'domain', which breaks Puppeteer.
+                    // We sanitize by removing null domains and adding 'url' instead.
+                    const validCookies = rawCookies.map(c => {
+                        if (!c.domain) {
+                            const { domain, ...rest } = c;
+                            return { ...rest, url: 'https://fisc.vn' };
+                        }
+                        return c;
+                    });
+                    
+                    await page.setCookie(...validCookies);
+                    console.log(`   Loaded ${validCookies.length} session cookies.`);
                 } catch (e) {
-                    console.error('❌ Error parsing FISC_COOKIES:', e.message);
+                    console.error('❌ Error loading FISC_COOKIES:', e.message);
                 }
             }
         }
