@@ -65,7 +65,7 @@ async function fetchReportLinks() {
 
     try {
         console.log(`🚀 Launching browser (CI: ${IS_CI})...`);
-        console.log('📦 Version: 3.0 - Headful Mode (Xvfb Virtual Display)');
+        console.log('📦 Version: 3.1 - Deep Spoofing (Timezone + Client Hints)');
 
         // CRITICAL: Run HEADFUL (visible) to defeat Bot Detection.
         // In CI, this works because we are using 'xvfb-run' (Virtual Framebuffer).
@@ -83,27 +83,39 @@ async function fetchReportLinks() {
         browser = await puppeteer.launch(launchConfig);
         const page = await browser.newPage();
 
-        // 1. Set Realistic User Agent (Avoid HeadlessChrome detection)
+        // 1. Set Realistic User Agent & Client Hints (Fix "Windows UA on Linux" detection)
         // Fix: Sync User-Agent with the Session Cookies to prevent "Session Hijacking" detection
         const customUA = process.env.FISC_USER_AGENT;
+        let userAgentToUse = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+
         if (customUA) {
             console.log('🎭 Applying Custom User-Agent to match session...');
-            await page.setUserAgent(customUA);
+            userAgentToUse = customUA;
             console.log(`   User-Agent: ${customUA.substring(0, 50)}...`);
-        } else {
-            // Default Fallback
-            await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
         }
 
-        await page.setViewport({ width: 1280, height: 800 });
+        await page.setUserAgent(userAgentToUse);
+
+        // EXTRA SECURITY: Spoof Client Hints to match Windows (since we are on Linux CI)
         await page.setExtraHTTPHeaders({
-            'Accept-Language': 'en-US,en;q=0.9',
+            'Accept-Language': 'vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7', // Match Vietnam locale
+            'Sec-Ch-Ua-Platform': '"Windows"', // Force Windows platform
+            'Sec-Ch-Ua-Mobile': '?0'
         });
+
+        // Spoof Timezone to Vietnam (Match the likely session origin)
+        await page.emulateTimezone('Asia/Ho_Chi_Minh');
+
+        await page.setViewport({ width: 1280, height: 800 });
 
         // Remove navigator.webdriver
         await page.evaluateOnNewDocument(() => {
             Object.defineProperty(navigator, 'webdriver', {
                 get: () => false,
+            });
+            // Overwrite platform to match UA
+            Object.defineProperty(navigator, 'platform', {
+                get: () => 'Win32',
             });
         });
 
