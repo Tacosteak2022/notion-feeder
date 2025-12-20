@@ -68,7 +68,7 @@ async function fetchReportLinks() {
 
     try {
         console.log(`🚀 Launching browser (CI: ${IS_CI})...`);
-        console.log('📦 Version: 3.4 - Fixed Syntax Error (Ready for Timing Test)');
+        console.log('📦 Version: 3.5 - Removed Deprecated API (Stable Timing Test)');
 
         // CRITICAL: Run HEADFUL (visible) to defeat Bot Detection.
         // In CI, this works because we are using 'xvfb-run' (Virtual Framebuffer).
@@ -452,9 +452,14 @@ async function fetchReportLinks() {
                 }, { timeout: 5000 }, linkSelector);
 
                 // Mouse movement simulation before click
-                const linkElement = await page.$x(linkSelector);
-                if (linkElement && linkElement.length > 0) {
-                    const box = await linkElement[0].boundingBox();
+                // Fix: page.$x is deprecated. Use evaluateHandle to get element.
+                const linkHandle = await page.evaluateHandle((xpath) => {
+                    const result = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
+                    return result.singleNodeValue;
+                }, linkSelector);
+
+                if (linkHandle.asElement()) {
+                    const box = await linkHandle.boundingBox();
                     if (box) {
                         await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
                         await randomSleep(200, 600);
