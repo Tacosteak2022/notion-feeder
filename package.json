@@ -16,6 +16,7 @@
         "@notionhq/client": "^2.2.15",
         "axios": "^1.7.9",
         "dotenv": "^17.2.3",
+        "he": "^1.2.0",
         "jsdom": "^25.0.1",
         "puppeteer": "^23.10.1",
         "puppeteer-extra": "^3.3.6",

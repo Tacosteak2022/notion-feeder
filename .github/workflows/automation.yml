@@ -21,7 +21,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v2
         with:
-          node-version: 18
+          node-version: 20
 
       # THIS IS THE STEP YOU WERE MISSING IN YOUR LOGS
       - name: Force Install Dependencies
