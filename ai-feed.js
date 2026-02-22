@@ -27,9 +27,34 @@ const MODEL_NAME = "gemini-2.5-flash";
 // SECURITY FIX: Create an agent that ignores "certificate has expired" errors
 const httpsAgent = new https.Agent({ rejectUnauthorized: false });
 
-// Rate limiter: delay between Notion API calls to avoid rate_limited errors
+// Rate limiter + retry with backoff for Notion API calls
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
-const NOTION_DELAY_MS = 350;
+const NOTION_DELAY_MS = 400;
+
+async function notionRetry(fn, label = 'Notion call', maxRetries = 3) {
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        await delay(NOTION_DELAY_MS);
+        try {
+            return await fn();
+        } catch (e) {
+            if (e.code === 'rate_limited' && attempt < maxRetries) {
+                const waitMs = 5000 * Math.pow(2, attempt - 1); // 5s, 10s, 20s
+                console.warn(`Rate limited on ${label}. Waiting ${waitMs / 1000}s before retry ${attempt + 1}/${maxRetries}...`);
+                await delay(waitMs);
+            } else {
+                throw e;
+            }
+        }
+    }
+}
+
+// Helper: Ensure URL has a protocol
+function normalizeUrl(url) {
+    if (url && !url.startsWith('http://') && !url.startsWith('https://')) {
+        return 'https://' + url;
+    }
+    return url;
+}
 
 // Helper to clean XML (remove BOM, leading whitespace)
 function cleanXml(xml) {
@@ -199,7 +224,8 @@ async function main() {
         let newArticles = 0;
         const failedFeeds = [];
 
-        for (const url of feedUrls) {
+        for (let url of feedUrls) {
+            url = normalizeUrl(url);
             try {
                 // ROBUST FETCH: Fetch string -> Clean -> Parse
                 const feedData = await fetchFeed(url);
@@ -266,26 +292,24 @@ async function main() {
 
                     console.log(`Checking: ${item.title}`);
 
-                    // 1. Check Duplicates (with rate limit delay)
-                    await delay(NOTION_DELAY_MS);
-                    const existing = await notion.databases.query({
+                    // 1. Check Duplicates (with retry on rate limit)
+                    const existing = await notionRetry(() => notion.databases.query({
                         database_id: READER_DB_ID,
                         filter: { property: 'Link', url: { equals: item.link } }
-                    });
+                    }), `dedup: ${item.title}`);
                     if (existing.results.length > 0) {
                         console.log('Skipping existing.');
                         continue;
                     }
 
                     // 2. Create Notion page (Title + Link only)
-                    await delay(NOTION_DELAY_MS);
-                    await notion.pages.create({
+                    await notionRetry(() => notion.pages.create({
                         parent: { database_id: READER_DB_ID },
                         properties: {
                             "Title": { title: [{ type: "text", text: { content: item.title || "Untitled" } }] },
                             "Link": { url: item.link }
                         }
-                    });
+                    }), `create: ${item.title}`);
                     console.log(`Logged: ${item.title}`);
                     newArticles++;
 
