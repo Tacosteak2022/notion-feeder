@@ -221,12 +221,11 @@ async function loadExistingLinks() {
     console.log('Loading existing links from Notion for dedup...');
 
     while (hasMore) {
-        await delay(NOTION_DELAY_MS);
-        const response = await notion.databases.query({
+        const response = await notionRetry(() => notion.databases.query({
             database_id: READER_DB_ID,
             start_cursor: startCursor,
-            page_size: 100 // Max allowed by Notion
-        });
+            page_size: 100
+        }), 'loadExistingLinks');
 
         for (const page of response.results) {
             const link = page.properties.Link?.url;
@@ -248,7 +247,7 @@ async function main() {
     try {
         // STEP 1: Load feeds and existing links
         console.log('Fetching feeds from Notion...');
-        const response = await notion.databases.query({ database_id: FEEDS_DB_ID });
+        const response = await notionRetry(() => notion.databases.query({ database_id: FEEDS_DB_ID }), 'fetchFeeds');
         const feedUrls = response.results.map(p => p.properties.Link?.url || p.properties.URL?.url).filter(u => u);
         console.log(`Found ${feedUrls.length} feeds.`);
 
