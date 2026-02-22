@@ -27,10 +27,20 @@ const MODEL_NAME = "gemini-2.5-flash";
 // SECURITY FIX: Create an agent that ignores "certificate has expired" errors
 const httpsAgent = new https.Agent({ rejectUnauthorized: false });
 
+// Rate limiter: delay between Notion API calls to avoid rate_limited errors
+const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+const NOTION_DELAY_MS = 350;
+
 // Helper to clean XML (remove BOM, leading whitespace)
 function cleanXml(xml) {
     if (!xml) return "";
     return xml.trim().replace(/^\uFEFF/, '');
+}
+
+// Helper: Case-insensitive check if data looks like HTML
+function looksLikeHtml(data) {
+    const trimmed = data.trim().substring(0, 500).toLowerCase();
+    return trimmed.startsWith("<!doctype html") || trimmed.includes("<html") || trimmed.includes("<title>error");
 }
 
 // Helper: Use Gemini to generate a synthetic RSS feed from an HTML page
@@ -128,7 +138,7 @@ async function fetchFeed(url) {
         const data = typeof response.data === 'string' ? response.data : JSON.stringify(response.data);
 
         // HTML CHECK: If we got HTML, save it for AI generation fallback
-        if (data.trim().startsWith("<!DOCTYPE html") || data.includes("<html")) {
+        if (looksLikeHtml(data)) {
             lastHtml = data;
             throw new Error("Axios returned HTML (not a feed)");
         }
@@ -145,7 +155,7 @@ async function fetchFeed(url) {
             if (!stdoutBot || stdoutBot.length < 50) throw new Error("Curl (Bingbot) returned empty/short response");
 
             // Check for HTML
-            if (stdoutBot.trim().startsWith("<!DOCTYPE html") || stdoutBot.includes("<html")) {
+            if (looksLikeHtml(stdoutBot)) {
                 lastHtml = stdoutBot; // Save for AI fallback
                 throw new Error("Curl returned HTML (not a feed)");
             }
@@ -186,7 +196,7 @@ async function main() {
 
         console.log(`Found ${feedUrls.length} feeds.`);
 
-        const newArticles = [];
+        let newArticles = 0;
         const failedFeeds = [];
 
         for (const url of feedUrls) {
@@ -256,7 +266,8 @@ async function main() {
 
                     console.log(`Checking: ${item.title}`);
 
-                    // 1. Check Duplicates
+                    // 1. Check Duplicates (with rate limit delay)
+                    await delay(NOTION_DELAY_MS);
                     const existing = await notion.databases.query({
                         database_id: READER_DB_ID,
                         filter: { property: 'Link', url: { equals: item.link } }
@@ -267,6 +278,7 @@ async function main() {
                     }
 
                     // 2. Create Notion page (Title + Link only)
+                    await delay(NOTION_DELAY_MS);
                     await notion.pages.create({
                         parent: { database_id: READER_DB_ID },
                         properties: {
@@ -275,12 +287,8 @@ async function main() {
                         }
                     });
                     console.log(`Logged: ${item.title}`);
+                    newArticles++;
 
-                    // 3. Add to Digest List
-                    newArticles.push({
-                        title: item.title || "Untitled",
-                        link: item.link
-                    });
                 }
 
             } catch (e) {
@@ -289,68 +297,11 @@ async function main() {
             }
         }
 
-        // Create Digest Page
-        if (newArticles.length > 0 || failedFeeds.length > 0) {
-            console.log(`Creating Market Summary with ${newArticles.length} articles and ${failedFeeds.length} failures...`);
-
-            const blocks = [];
-
-            // A. Add Articles
-            for (const article of newArticles) {
-                blocks.push({
-                    object: 'block',
-                    type: 'heading_2',
-                    heading_2: {
-                        rich_text: [{ type: 'text', text: { content: article.title }, annotations: { bold: true } }]
-                    }
-                });
-                blocks.push({
-                    object: 'block',
-                    type: 'paragraph',
-                    paragraph: {
-                        rich_text: [
-                            { type: 'text', text: { content: "Source: " } },
-                            { type: 'text', text: { content: "Link", link: { url: article.link } } }
-                        ]
-                    }
-                });
-                blocks.push({ object: 'block', type: 'divider', divider: {} });
-            }
-
-            // B. Add Failed Feeds Section (if any)
-            if (failedFeeds.length > 0) {
-                blocks.push({
-                    object: 'block',
-                    type: 'heading_2',
-                    heading_2: {
-                        rich_text: [{ type: 'text', text: { content: "⚠️ Failed Feeds" }, annotations: { color: "red" } }]
-                    }
-                });
-                for (const fail of failedFeeds) {
-                    blocks.push({
-                        object: 'block',
-                        type: 'paragraph',
-                        paragraph: {
-                            rich_text: [
-                                { type: 'text', text: { content: `Feed: ${fail.url}\nError: ${fail.error}` } }
-                            ]
-                        }
-                    });
-                }
-            }
-
-            // Create the Digest Page
-            const now = new Date().toLocaleString('en-US', { timeZone: 'Asia/Ho_Chi_Minh' });
-            await notion.pages.create({
-                parent: { database_id: READER_DB_ID },
-                properties: {
-                    "Title": { title: [{ type: "text", text: { content: `Market Summary @ ${now}` } }] }
-                },
-                children: blocks.slice(0, 100) // Notion limit: 100 blocks
-            });
-            console.log("Market Summary Created Successfully!");
-        } else {
-            console.log("No new articles found.");
+        // Summary Log
+        console.log(`\nDone. Logged ${newArticles} new articles. Failed feeds: ${failedFeeds.length}`);
+        if (failedFeeds.length > 0) {
+            console.log("Failed feeds:");
+            failedFeeds.forEach(f => console.log(`  - ${f.url}: ${f.error}`));
         }
     } catch (e) { console.error('Critical Main Error:', e.message); }
 }
