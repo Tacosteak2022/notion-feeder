@@ -1,8 +1,8 @@
 {
     "name": "notion-ai-feed-reader",
-    "version": "2.2.0",
+    "version": "3.0.0",
     "private": true,
-    "description": "RSS Feed Reader with Gemini AI Summaries",
+    "description": "RSS Feed Collector with AI Feed Generation",
     "main": "ai-feed.js",
     "scripts": {
         "start": "node ai-feed.js"
@@ -12,7 +12,6 @@
     },
     "dependencies": {
         "@google/generative-ai": "^0.2.1",
-        "@mozilla/readability": "^0.5.0",
         "@notionhq/client": "^2.2.15",
         "axios": "^1.7.9",
         "dotenv": "^17.2.3",
