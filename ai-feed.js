@@ -38,7 +38,7 @@ async function notionRetry(fn, label = 'Notion call', maxRetries = 3) {
             return await fn();
         } catch (e) {
             if (e.code === 'rate_limited' && attempt < maxRetries) {
-                const waitMs = 5000 * Math.pow(2, attempt - 1); // 5s, 10s, 20s
+                const waitMs = 15000 * Math.pow(2, attempt - 1); // 15s, 30s, 60s
                 console.warn(`Rate limited on ${label}. Waiting ${waitMs / 1000}s before retry ${attempt + 1}/${maxRetries}...`);
                 await delay(waitMs);
             } else {
@@ -211,15 +211,49 @@ async function fetchFeed(url) {
     }
 }
 
+// Pre-fetch all existing links from Notion to avoid per-item dedup API calls
+async function loadExistingLinks() {
+    const existingLinks = new Set();
+    let hasMore = true;
+    let startCursor = undefined;
+    let pageCount = 0;
+
+    console.log('Loading existing links from Notion for dedup...');
+
+    while (hasMore) {
+        await delay(NOTION_DELAY_MS);
+        const response = await notion.databases.query({
+            database_id: READER_DB_ID,
+            start_cursor: startCursor,
+            page_size: 100 // Max allowed by Notion
+        });
+
+        for (const page of response.results) {
+            const link = page.properties.Link?.url;
+            if (link) existingLinks.add(link);
+        }
+
+        pageCount += response.results.length;
+        hasMore = response.has_more;
+        startCursor = response.next_cursor;
+    }
+
+    console.log(`Loaded ${existingLinks.size} existing links (${pageCount} pages).`);
+    return existingLinks;
+}
+
 async function main() {
-    console.log("Script Version: FEED COLLECTOR (No AI Summary, With AI Feed Generation)");
+    console.log("Script Version: FEED COLLECTOR v3.3 (In-Memory Dedup, AI Feed Generation)");
 
     try {
+        // STEP 1: Load feeds and existing links
         console.log('Fetching feeds from Notion...');
         const response = await notion.databases.query({ database_id: FEEDS_DB_ID });
         const feedUrls = response.results.map(p => p.properties.Link?.url || p.properties.URL?.url).filter(u => u);
-
         console.log(`Found ${feedUrls.length} feeds.`);
+
+        // STEP 2: Pre-load ALL existing article links into memory (eliminates ~50% of API calls)
+        const existingLinks = await loadExistingLinks();
 
         let newArticles = 0;
         const failedFeeds = [];
@@ -234,7 +268,6 @@ async function main() {
                 try {
                     feed = await parser.parseString(feedData);
                 } catch (parseError) {
-                    // DEBUG LOGGING: Show what failed to parse
                     const snippet = feedData.substring(0, 200).replace(/\n/g, " ");
                     console.error(`Parse Error for ${url}: ${parseError.message}`);
                     console.error(`Snippet: ${snippet}...`);
@@ -249,7 +282,7 @@ async function main() {
                 for (const item of itemsToProcess) {
                     if (!item.link) continue;
 
-                    // DECODE TITLE: Fix HTML entities like &#244; -> ô (Handle double encoding)
+                    // DECODE TITLE
                     if (item.title) {
                         let decoded = item.title;
 
@@ -258,7 +291,6 @@ async function main() {
                                 .replace(/&#x([0-9a-f]+);/gi, (match, hex) => String.fromCharCode(parseInt(hex, 16)));
                         };
 
-                        // 1. Try 'he' library (multi-pass for double encoding)
                         try {
                             let output = he.decode(decoded);
                             let i = 0;
@@ -269,16 +301,13 @@ async function main() {
                             }
                         } catch (e) { console.warn("he.decode failed:", e); }
 
-                        // 2. Force Native Regex
                         decoded = decodeNumeric(decoded);
-
-                        // 3. One more pass for named entities
                         try { decoded = he.decode(decoded); } catch (e) { }
 
                         item.title = decoded;
                     }
 
-                    // TIME FILTER: Skip items older than RUN_FREQUENCY (in seconds)
+                    // TIME FILTER
                     if (process.env.RUN_FREQUENCY) {
                         const pubDate = new Date(item.isoDate || item.pubDate);
                         const timeDiff = (new Date() - pubDate) / 1000;
@@ -290,17 +319,12 @@ async function main() {
                         }
                     }
 
-                    console.log(`Checking: ${item.title}`);
-
-                    // 1. Check Duplicates (with retry on rate limit)
-                    const existing = await notionRetry(() => notion.databases.query({
-                        database_id: READER_DB_ID,
-                        filter: { property: 'Link', url: { equals: item.link } }
-                    }), `dedup: ${item.title}`);
-                    if (existing.results.length > 0) {
-                        console.log('Skipping existing.');
-                        continue;
+                    // 1. FAST DEDUP: Check in-memory Set (NO API call!)
+                    if (existingLinks.has(item.link)) {
+                        continue; // Silent skip — no log spam for existing items
                     }
+
+                    console.log(`New: ${item.title}`);
 
                     // 2. Create Notion page (Title + Link only)
                     await notionRetry(() => notion.pages.create({
@@ -313,6 +337,8 @@ async function main() {
                     console.log(`Logged: ${item.title}`);
                     newArticles++;
 
+                    // Track locally so we don't create duplicates within the same run
+                    existingLinks.add(item.link);
                 }
 
             } catch (e) {
